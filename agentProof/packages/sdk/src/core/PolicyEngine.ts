@@ -4,6 +4,7 @@ import type {
   NormalizedIntent,
   Policy,
   PolicyResult,
+  PolicyRow,
   PolicyState,
   PolicyViolation,
   ProofReference,
@@ -57,17 +58,29 @@ export class PolicyEngine {
    */
   evaluate(intent: NormalizedIntent, state: PolicyState): PolicyResult {
     const violations: PolicyViolation[] = [];
+    const policyRows: PolicyRow[] = [];
     let decision: Decision = 'ALLOW';
     let reason = 'within all policy limits';
     let decidingPolicy: string | undefined;
 
     for (const policy of this.options.policies) {
       const evaluation = policy.evaluate(intent, state);
+      policyRows.push({
+        id: policy.id,
+        name: labelPolicy(policy.id),
+        decision: evaluation.decision,
+        passed: evaluation.decision === 'ALLOW',
+        formallyVerified: policy.formallyVerified,
+        reason: evaluation.reason ?? (evaluation.decision === 'ALLOW' ? 'passed' : 'policy decided'),
+        limit: evaluation.violation?.limit,
+        observed: evaluation.violation?.observed,
+        provenance: evaluation.violation?.provenance,
+      });
 
       if (evaluation.violation) violations.push(evaluation.violation);
 
       if (evaluation.decision === 'BLOCK') {
-        return this.result('BLOCK', evaluation.reason ?? 'blocked by policy', intent, violations, policy.id);
+        return this.result('BLOCK', evaluation.reason ?? 'blocked by policy', intent, violations, policyRows, policy.id);
       }
 
       if (evaluation.decision === 'REQUIRE_APPROVAL' && decision === 'ALLOW') {
@@ -77,7 +90,7 @@ export class PolicyEngine {
       }
     }
 
-    return this.result(decision, reason, intent, violations, decidingPolicy);
+    return this.result(decision, reason, intent, violations, policyRows, decidingPolicy);
   }
 
   /** Convenience: decode then evaluate. */
@@ -90,6 +103,7 @@ export class PolicyEngine {
     reason: string,
     intent: NormalizedIntent,
     violations: PolicyViolation[],
+    policyRows: PolicyRow[],
     decidingPolicy?: string,
   ): PolicyResult {
     return {
@@ -97,6 +111,7 @@ export class PolicyEngine {
       reason,
       intent,
       violations,
+      policyRows,
       // A proof reference is attached only when the policy that actually
       // decided is one we have a proof for. Attaching proofs to unrelated
       // decisions would be proof theatre.
@@ -104,5 +119,22 @@ export class PolicyEngine {
       sequence: ++this.sequence,
       evaluatedAt: Date.now(),
     };
+  }
+}
+
+function labelPolicy(id: string): string {
+  switch (id) {
+    case 'allowlist':
+      return 'Allowed contract / recipient';
+    case 'maxTransaction':
+      return 'Max transaction';
+    case 'minBalance':
+      return 'Minimum balance';
+    case 'dailySpend':
+      return 'Daily spend';
+    case 'approvalThreshold':
+      return 'Human approval threshold';
+    default:
+      return id;
   }
 }

@@ -21,10 +21,10 @@ const POLICY: PolicyDocument = {
   chainId: 11155111,
   asset: { address: USDC, decimals: 6 },
   policies: {
-    maxTransaction: '100',
-    dailySpend: '500',
-    approvalThreshold: '100',
-    minBalance: '10',
+    maxTransaction: '100000000',
+    dailySpend: '500000000',
+    approvalThreshold: '100000000',
+    minBalance: '10000000',
     allowedContracts: [ROUTER],
     allowedRecipients: [ME],
   },
@@ -246,7 +246,7 @@ describe('policy validation', () => {
     const { state } = setup();
     await assert.rejects(
       createAgentProof({
-        policy: { ...POLICY, policies: { ...POLICY.policies, dailySpend: '50' } },
+        policy: { ...POLICY, policies: { ...POLICY.policies, dailySpend: '50000000' } },
         state,
       }),
       /below maxTransaction/,
@@ -257,7 +257,7 @@ describe('policy validation', () => {
     const { state } = setup();
     await assert.rejects(
       createAgentProof({
-        policy: { ...POLICY, policies: { ...POLICY.policies, approvalThreshold: '500' } },
+        policy: { ...POLICY, policies: { ...POLICY.policies, approvalThreshold: '500000000' } },
         state,
       }),
       /could ever reach a human/,

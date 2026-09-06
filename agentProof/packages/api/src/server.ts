@@ -3,7 +3,9 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
+  CommitmentScheme,
   ConsoleLogger,
+  GraphStateProvider,
   MemoryStateProvider,
   PolicyEngine,
   ProofRegistry,
@@ -18,7 +20,10 @@ import {
   MaxTransactionPolicy,
   MinBalancePolicy,
   type PolicyDocument,
+  type PolicyResult,
+  toPublicAuditRecord,
 } from '@agentproof/sdk';
+import { readRuntimeConfig, tokenFingerprint, type RuntimeConfig } from './config.ts';
 import { Blocky402Facilitator } from './x402/blocky402.ts';
 import { createX402Gate, respondJson } from './x402/middleware.ts';
 import { HcsAuditTrail, createHederaSubmitter } from './x402/hcsAudit.ts';
@@ -68,15 +73,34 @@ export interface ServerOptions {
   };
   hedera?: { accountId: string; privateKey: string; topicId: string; network: 'testnet' | 'mainnet' };
   chain?: { rpcUrl: string; chainId: number; universalResolver?: string };
+  graph?: { endpoint: string; apiKey: string };
+  mode?: 'simulation' | 'production';
+  adminToken?: string;
 }
 
 export async function createApiServer(options: ServerOptions) {
   const logger = new ConsoleLogger('info');
   const policy = resolvePolicy(options.policy);
-  const state = new MemoryStateProvider();
   const proofs = await ProofRegistry.load(join(here, '../../../proofs'));
 
-  const canReadBalances = Boolean(options.chain?.rpcUrl);
+  const mode = options.mode ?? 'simulation';
+  const chainOptions = options.chain?.rpcUrl ? options.chain : undefined;
+  const canReadBalances = Boolean(chainOptions);
+  const chain = chainOptions
+    ? new JsonRpcChainReader({ url: chainOptions.rpcUrl, chainId: chainOptions.chainId, logger })
+    : undefined;
+
+  const state =
+    mode === 'production'
+      ? new GraphStateProvider({
+          endpoint: required(options.graph?.endpoint, 'GRAPH_ENDPOINT is required in production mode'),
+          apiKey: required(options.graph?.apiKey, 'GRAPH_API_KEY is required in production mode'),
+          http: fetchHttpClient,
+          hook: policy.hook,
+          chain,
+          logger,
+        })
+      : new MemoryStateProvider();
 
   const engine = new PolicyEngine({
     decoders: createDefaultRegistry(),
@@ -89,7 +113,7 @@ export async function createApiServer(options: ServerOptions) {
     policies: [
       new AllowlistPolicy(policy.allowedContracts, policy.allowedRecipients),
       new MaxTransactionPolicy(policy.maxTransaction),
-      ...(canReadBalances ? [new MinBalancePolicy(policy.minBalance)] : []),
+      ...(canReadBalances || mode === 'production' ? [new MinBalancePolicy(policy.minBalance)] : []),
       new DailySpendPolicy(policy.dailySpend),
       new ApprovalThresholdPolicy(policy.approvalThreshold),
     ],
@@ -105,16 +129,15 @@ export async function createApiServer(options: ServerOptions) {
     policy,
     state,
     proofs,
-    unevaluatedPolicies: canReadBalances
+    mode: canReadBalances || mode === 'production' ? mode : 'simulation',
+    unevaluatedPolicies: canReadBalances || mode === 'production'
       ? []
-      : [{ policy: 'minBalance', reason: 'no RPC configured, so the account balance cannot be read' }],
+      : [{ policy: 'minBalance', reason: 'simulation mode has no RPC, so the account balance cannot be read' }],
   };
 
   // Live chain reads. Optional: without an RPC the API still answers, and the
   // reconciliation view reports null rather than inventing a number.
-  if (options.chain?.rpcUrl) {
-    const chain = new JsonRpcChainReader({ url: options.chain.rpcUrl, chainId: options.chain.chainId, logger });
-
+  if (chain) {
     context.readOnchainSpend = async (account: string) => {
       try {
         const data = `${WINDOW_SELECTOR}${account.slice(2).toLowerCase().padStart(64, '0')}` as `0x${string}`;
@@ -129,10 +152,10 @@ export async function createApiServer(options: ServerOptions) {
       }
     };
 
-    if (options.chain.universalResolver) {
+    if (chainOptions?.universalResolver) {
       const identity = new ENSIdentity({
         chain,
-        universalResolver: options.chain.universalResolver as `0x${string}`,
+        universalResolver: chainOptions.universalResolver as `0x${string}`,
         logger,
       });
 
@@ -158,6 +181,7 @@ export async function createApiServer(options: ServerOptions) {
 
   // --- x402 -----------------------------------------------------------------
   let gate: ReturnType<typeof createX402Gate> | undefined;
+  let decodeGate: ReturnType<typeof createX402Gate> | undefined;
   if (options.x402) {
     const facilitator = new Blocky402Facilitator({
       baseUrl: options.x402.facilitatorUrl,
@@ -177,6 +201,16 @@ export async function createApiServer(options: ServerOptions) {
       asset: options.x402.asset,
       payTo: options.x402.payTo,
       price: options.x402.priceVerify,
+      baseUrl: options.x402.baseUrl,
+      logger,
+      enabled: options.x402.enabled,
+    });
+    decodeGate = createX402Gate({
+      facilitator,
+      network: options.x402.network,
+      asset: options.x402.asset,
+      payTo: options.x402.payTo,
+      price: options.x402.priceDecode,
       baseUrl: options.x402.baseUrl,
       logger,
       enabled: options.x402.enabled,
@@ -218,12 +252,16 @@ export async function createApiServer(options: ServerOptions) {
     if (path === '/health') {
       await respondJson(res, 200, {
         ok: true,
+        mode,
         policyHash: policy.hash,
         agent: options.policy.agent,
         account: policy.account,
         hook: policy.hook,
         proofs: proofs.all().map((p) => ({ property: p.property, status: p.status })),
         x402: options.x402?.enabled ?? false,
+        dashboardAuth: Boolean(options.adminToken),
+        dashboardSession: hasDashboardSession(req, options.adminToken),
+        adminTokenFingerprint: tokenFingerprint(options.adminToken),
       });
       return;
     }
@@ -235,9 +273,29 @@ export async function createApiServer(options: ServerOptions) {
       return;
     }
 
+    if (path === '/v1/dashboard/login' && req.method === 'POST') {
+      const body = (await readJson(req)) as { token?: string };
+      if (!options.adminToken) {
+        await respondJson(res, 503, { error: 'dashboard auth is not configured' });
+        return;
+      }
+      if (body.token !== options.adminToken) {
+        await respondJson(res, 401, { error: 'invalid dashboard token' });
+        return;
+      }
+      setDashboardCookie(res, options.adminToken);
+      await respondJson(res, 200, { ok: true });
+      return;
+    }
+
     if (path === '/v1/verify' && req.method === 'POST') {
       const body = await readJson(req);
-      const work = () => verifyRoute(context, body as { action?: Record<string, unknown> });
+      const work = async () => {
+        const result = await verifyRoute(context, body as { agent?: string; action?: Record<string, unknown> });
+        if (audit) audit.record(toPublicAuditRecord(result as PolicyResult, policy.account, policy.hash, new CommitmentScheme()));
+        stream.publish({ type: 'decision', data: result });
+        return result;
+      };
       if (gate) await gate(req, res, '/v1/verify', work);
       else await respondJson(res, 200, await work());
       return;
@@ -246,7 +304,7 @@ export async function createApiServer(options: ServerOptions) {
     if (path === '/v1/decode' && req.method === 'POST') {
       const body = await readJson(req);
       const work = () => decodeRoute(context, body as Record<string, unknown>);
-      if (gate) await gate(req, res, '/v1/decode', work);
+      if (decodeGate) await decodeGate(req, res, '/v1/decode', work);
       else await respondJson(res, 200, await work());
       return;
     }
@@ -264,6 +322,7 @@ export async function createApiServer(options: ServerOptions) {
     }
 
     if (path === '/v1/stream' && req.method === 'GET') {
+      if (!requireDashboardSession(req, res, options.adminToken)) return;
       stream.subscribe(res);
       return;
     }
@@ -272,6 +331,7 @@ export async function createApiServer(options: ServerOptions) {
     // resolves a request that is already pending — it cannot create one, and it
     // cannot approve anything the policy engine did not escalate.
     if (path === '/v1/approve' && req.method === 'POST') {
+      if (!requireDashboardSession(req, res, options.adminToken)) return;
       const body = (await readJson(req)) as { id?: string; approved?: boolean };
       if (typeof body.id !== 'string') {
         await respondJson(res, 400, { error: 'id is required' });
@@ -285,9 +345,8 @@ export async function createApiServer(options: ServerOptions) {
       return;
     }
 
-    // Publishes a decision to connected dashboards. Used by the demo runner and
-    // by agents that want their decisions visible; it stores nothing.
-    if (path === '/v1/publish' && req.method === 'POST') {
+    if (path === '/v1/internal/publish' && req.method === 'POST') {
+      if (!requireInternalPublisher(req, res, options.adminToken)) return;
       const body = (await readJson(req)) as { type?: string; data?: unknown };
       stream.publish({ type: (body.type as 'decision' | 'thought') ?? 'decision', data: body.data });
       await respondJson(res, 202, { published: true, clients: stream.clientCount });
@@ -337,9 +396,86 @@ function corsHeaders(): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-PAYMENT',
+    'Access-Control-Allow-Headers': 'Content-Type, X-PAYMENT, X-AgentProof-Admin',
     'Access-Control-Expose-Headers': 'X-PAYMENT-RESPONSE',
   };
+}
+
+function required<T>(value: T | undefined, message: string): T {
+  if (value === undefined || value === '') throw new Error(message);
+  return value;
+}
+
+export async function createApiServerFromEnv(policy: PolicyDocument, env = process.env) {
+  const config: RuntimeConfig = readRuntimeConfig(env, policy);
+  return createApiServer({
+    policy,
+    port: Number(env.PORT ?? 8402),
+    mode: config.mode,
+    adminToken: config.adminToken,
+    graph: config.graph,
+    x402: {
+      enabled: env.X402_ENABLED === 'true',
+      facilitatorUrl: env.X402_FACILITATOR_URL ?? 'https://facilitator.blocky402.io',
+      network: env.HEDERA_NETWORK === 'mainnet' ? 'hedera-mainnet' : 'hedera-testnet',
+      asset: env.HEDERA_USDC_TOKEN_ID ?? '0.0.429274',
+      payTo: env.HEDERA_ACCOUNT_ID ?? '0.0.0',
+      priceVerify: env.X402_PRICE_VERIFY_USDC ?? '0.01',
+      priceDecode: env.X402_PRICE_DECODE_USDC ?? '0.005',
+      baseUrl: env.API_PUBLIC_URL ?? 'http://localhost:8402',
+    },
+    chain: env.SEPOLIA_RPC_URL
+      ? {
+          rpcUrl: env.SEPOLIA_RPC_URL,
+          chainId: Number(env.CHAIN_ID ?? 11155111),
+          universalResolver: env.ENS_UNIVERSAL_RESOLVER,
+        }
+      : undefined,
+    hedera:
+      env.HCS_AUDIT_TOPIC_ID && env.HEDERA_PRIVATE_KEY
+        ? {
+            accountId: env.HEDERA_ACCOUNT_ID!,
+            privateKey: env.HEDERA_PRIVATE_KEY!,
+            topicId: env.HCS_AUDIT_TOPIC_ID,
+            network: env.HEDERA_NETWORK === 'mainnet' ? 'mainnet' : 'testnet',
+          }
+        : undefined,
+  });
+}
+
+function hasDashboardSession(req: IncomingMessage, token?: string): boolean {
+  if (!token) return true;
+  return cookieValue(req, 'agentproof_session') === sessionValue(token);
+}
+
+function requireDashboardSession(req: IncomingMessage, res: ServerResponse, token?: string): boolean {
+  if (hasDashboardSession(req, token)) return true;
+  void respondJson(res, 401, { error: 'dashboard session required' });
+  return false;
+}
+
+function requireInternalPublisher(req: IncomingMessage, res: ServerResponse, token?: string): boolean {
+  if (!token || req.headers['x-agentproof-admin'] === token) return true;
+  void respondJson(res, 401, { error: 'internal publisher token required' });
+  return false;
+}
+
+function setDashboardCookie(res: ServerResponse, token: string): void {
+  res.setHeader('Set-Cookie', `agentproof_session=${sessionValue(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200`);
+}
+
+function cookieValue(req: IncomingMessage, name: string): string | undefined {
+  const cookie = req.headers.cookie;
+  if (!cookie) return undefined;
+  for (const part of cookie.split(';')) {
+    const [key, ...rest] = part.trim().split('=');
+    if (key === name) return rest.join('=');
+  }
+  return undefined;
+}
+
+function sessionValue(token: string): string {
+  return Buffer.from(`v1:${tokenFingerprint(token)}`).toString('base64url');
 }
 
 /** Bounded body reader. An unbounded one is a denial-of-service waiting to be found. */

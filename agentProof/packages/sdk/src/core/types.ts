@@ -77,6 +77,20 @@ export interface PolicyViolation {
   message: string;
 }
 
+export interface PolicyRow {
+  /** stable id used by tests, API consumers and the dashboard */
+  id: string;
+  /** short human-readable label */
+  name: string;
+  decision: Decision;
+  passed: boolean;
+  formallyVerified: boolean;
+  reason: string;
+  limit?: bigint;
+  observed?: bigint;
+  provenance?: Provenance;
+}
+
 export interface ProofReference {
   property: 'MAX_TRANSFER' | 'DAILY_SPEND';
   status: 'PROVEN' | 'UNPROVEN' | 'COUNTEREXAMPLE' | 'NOT_RUN';
@@ -108,6 +122,8 @@ export interface PolicyResult {
   reason: string;
   intent: NormalizedIntent;
   violations: PolicyViolation[];
+  /** one row per policy evaluated, in engine order */
+  policyRows: PolicyRow[];
   proof?: ProofReference;
   approvalRequest?: ApprovalRequest;
   /** present when decision === 'ALLOW' and the action was executed */

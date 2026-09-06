@@ -4,7 +4,7 @@ import {
   SimulatedAccount,
   createAgentProof,
   displayUsdc,
-  parsePolicyAmount,
+  parseBaseUnitPolicyAmount,
   usdc,
   type Action,
   type Address,
@@ -43,9 +43,9 @@ export async function runResearcher(options: ResearcherOptions) {
     policy.enforcement.account as Address,
     {
       asset: policy.asset.address,
-      maxTransaction: parsePolicyAmount(policy.policies.maxTransaction),
-      dailyLimit: parsePolicyAmount(policy.policies.dailySpend),
-      minBalance: parsePolicyAmount(policy.policies.minBalance),
+      maxTransaction: parseBaseUnitPolicyAmount(policy.policies.maxTransaction),
+      dailyLimit: parseBaseUnitPolicyAmount(policy.policies.dailySpend),
+      minBalance: parseBaseUnitPolicyAmount(policy.policies.minBalance),
       policyHash: '0x00',
       allowedTargets: [...policy.policies.allowedContracts, options.facilitator],
     },
@@ -88,7 +88,16 @@ export async function runResearcher(options: ResearcherOptions) {
   const answers: unknown[] = [];
   for (const query of options.queries) {
     try {
-      const response = await client.fetchPaid<unknown>(`${options.serviceUrl}/v1/verify`, { query });
+      const response = await client.fetchPaid<unknown>(`${options.serviceUrl}/v1/verify`, {
+        agent: policy.agent,
+        action: {
+          to: policy.enforcement.account,
+          data: '0x',
+          value: '0',
+          chainId: policy.chainId,
+          metadata: { query },
+        },
+      });
       answers.push(response.data);
       logger.log('info', 'paid query completed', { paid: response.paid, transactionId: response.transactionId });
     } catch (error) {

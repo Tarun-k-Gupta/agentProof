@@ -47,10 +47,10 @@ describe('policyHash', () => {
     chainId: 11155111,
     asset: { address: '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238', decimals: 6 },
     policies: {
-      maxTransaction: '100',
-      dailySpend: '500',
-      approvalThreshold: '100',
-      minBalance: '10',
+      maxTransaction: '100000000',
+      dailySpend: '500000000',
+      approvalThreshold: '100000000',
+      minBalance: '10000000',
       allowedContracts: ['0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad'],
       allowedRecipients: [],
     },
@@ -65,7 +65,7 @@ describe('policyHash', () => {
   });
 
   test('changes when any limit changes', () => {
-    const widened = { ...base, policies: { ...base.policies, maxTransaction: '1000' } };
+    const widened = { ...base, policies: { ...base.policies, maxTransaction: '1000000000' } };
     assert.notEqual(policyHash(base), policyHash(widened));
   });
 

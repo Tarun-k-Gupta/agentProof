@@ -1,7 +1,7 @@
 import type { Address, Hex, PolicyDocument, ResolvedPolicy } from './types.ts';
 import { keccak256 } from '../crypto/keccak.ts';
 import { addressSet, normalizeAddress } from '../utils/hex.ts';
-import { parsePolicyAmount } from '../utils/units.ts';
+import { parseBaseUnitPolicyAmount } from '../utils/units.ts';
 
 /**
  * Canonical JSON serialisation.
@@ -73,7 +73,7 @@ export function resolvePolicy(document: PolicyDocument): ResolvedPolicy {
   const amount = (key: keyof PolicyDocument['policies']): bigint => {
     const raw = document.policies[key];
     if (typeof raw !== 'string') throw new PolicyValidationError(`policies.${String(key)} must be a decimal string`);
-    const value = parsePolicyAmount(raw, document.asset.decimals);
+    const value = parseBaseUnitPolicyAmount(raw);
     if (value < 0n) throw new PolicyValidationError(`policies.${String(key)} must not be negative`);
     return value;
   };

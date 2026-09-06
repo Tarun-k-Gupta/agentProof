@@ -48,6 +48,18 @@ export function parsePolicyAmount(value: string, decimals = USDC_DECIMALS): bigi
   return negative ? -scaled : scaled;
 }
 
+export function parseBaseUnitPolicyAmount(value: string): bigint {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) throw new Error(`Invalid base-unit policy amount: ${JSON.stringify(value)}`);
+  if (/^[1-9]\d{0,5}$/.test(trimmed)) {
+    throw new Error(
+      `Policy amount ${JSON.stringify(value)} looks like an old display-unit value. ` +
+        'The PRD schema stores USDC base units; use "100000000" for 100 USDC.',
+    );
+  }
+  return BigInt(trimmed);
+}
+
 /** formatUsdc(100_250_000n) === '100.25' */
 export function formatUsdc(amount: bigint, decimals = USDC_DECIMALS): string {
   const scale = 10n ** BigInt(decimals);

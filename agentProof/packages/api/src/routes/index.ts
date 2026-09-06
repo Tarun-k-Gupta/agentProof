@@ -10,6 +10,7 @@ export interface RouteContext {
   proofs: ProofRegistry;
   /** Policies this deployment cannot evaluate, and why. Reported, never hidden. */
   unevaluatedPolicies?: Array<{ policy: string; reason: string }>;
+  mode: 'simulation' | 'production';
   agentProof?: AgentProof;
   /** resolves an ENS name to its live policy document */
   resolvePolicyByName?: (name: string) => Promise<unknown>;
@@ -24,7 +25,10 @@ export interface RouteContext {
  * implementation of every decision in this repo; this route is a second product
  * surface, not a second product.
  */
-export async function verifyRoute(ctx: RouteContext, body: { action?: Record<string, unknown> }): Promise<unknown> {
+export async function verifyRoute(ctx: RouteContext, body: { agent?: string; action?: Record<string, unknown> }): Promise<unknown> {
+  if (body.agent !== undefined && body.agent !== ctx.policy.document.agent) {
+    throw new BadRequestError(`unknown agent ${JSON.stringify(body.agent)}; expected ${ctx.policy.document.agent}`);
+  }
   const action = parseAction(body.action);
   const dayUtc = utcDay(Date.now());
 
@@ -46,6 +50,7 @@ export async function verifyRoute(ctx: RouteContext, body: { action?: Record<str
     decision: result.decision,
     reason: result.reason,
     violations: result.violations,
+    policyRows: result.policyRows.map(serialisePolicyRow),
     intent: serialiseIntent(result.intent),
     proof: result.proof,
     // Restated on every response so a consumer cannot mistake this for the
@@ -55,6 +60,7 @@ export async function verifyRoute(ctx: RouteContext, body: { action?: Record<str
       note: 'This endpoint is advisory. Enforcement is the ERC-7579 hook installed on the account.',
       hook: ctx.policy.hook,
       account: ctx.policy.account,
+      mode: ctx.mode,
       // A caller must be able to tell the difference between "this passed every
       // policy" and "this passed every policy we were able to check".
       unevaluatedPolicies: ctx.unevaluatedPolicies ?? [],
@@ -153,8 +159,16 @@ function serialiseIntent(intent: import('@agentproof/sdk').NormalizedIntent) {
   };
 }
 
+function serialisePolicyRow(row: import('@agentproof/sdk').PolicyRow) {
+  return {
+    ...row,
+    limit: row.limit?.toString(),
+    observed: row.observed?.toString(),
+  };
+}
+
 export async function respondError(res: ServerResponse, error: unknown): Promise<void> {
-  const status = error instanceof BadRequestError ? 400 : 500;
+  const status = error instanceof BadRequestError ? 400 : /unreachable|unavailable|Cannot determine/i.test(String(error)) ? 503 : 500;
   const message = error instanceof Error ? error.message : 'Unexpected error';
   // Never echo the request body back; it may carry calldata a caller considers
   // sensitive, and a 500 is not a reason to start logging payloads.

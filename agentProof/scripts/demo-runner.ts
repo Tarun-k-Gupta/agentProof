@@ -20,7 +20,7 @@ import {
   encodeErc20Transfer,
   encodeSwapExactIn,
   encodeSwapExactOut,
-  parsePolicyAmount,
+  parseBaseUnitPolicyAmount,
   policyHash,
   usdc,
   PolicyRevert,
@@ -92,9 +92,9 @@ async function main(): Promise<void> {
     account,
     {
       asset,
-      maxTransaction: parsePolicyAmount(policy.policies.maxTransaction),
-      dailyLimit: parsePolicyAmount(policy.policies.dailySpend),
-      minBalance: parsePolicyAmount(policy.policies.minBalance),
+      maxTransaction: parseBaseUnitPolicyAmount(policy.policies.maxTransaction),
+      dailyLimit: parseBaseUnitPolicyAmount(policy.policies.dailySpend),
+      minBalance: parseBaseUnitPolicyAmount(policy.policies.minBalance),
       policyHash: policyHash(policy),
       allowedTargets: policy.policies.allowedContracts,
     },
@@ -141,9 +141,9 @@ async function main(): Promise<void> {
   console.log(`  ${DIM}agent      ${policy.agent}${RESET}`);
   console.log(`  ${DIM}policyHash ${proof.policyHash}${RESET}`);
   console.log(
-    `  ${DIM}limits     max ${displayUsdc(parsePolicyAmount(policy.policies.maxTransaction))} / ` +
-      `day ${displayUsdc(parsePolicyAmount(policy.policies.dailySpend))} / ` +
-      `reserve ${displayUsdc(parsePolicyAmount(policy.policies.minBalance))}${RESET}`,
+    `  ${DIM}limits     max ${displayUsdc(parseBaseUnitPolicyAmount(policy.policies.maxTransaction))} / ` +
+      `day ${displayUsdc(parseBaseUnitPolicyAmount(policy.policies.dailySpend))} / ` +
+      `reserve ${displayUsdc(parseBaseUnitPolicyAmount(policy.policies.minBalance))}${RESET}`,
   );
 
   heading('Identity: the policy hash is published, not just local', 'ENS');
@@ -161,7 +161,7 @@ async function main(): Promise<void> {
     value: 0n,
     chainId: policy.chainId,
   }));
-  console.log(`  ${DIM}daily gauge: ${displayUsdc(simulated.spentToday)} / ${displayUsdc(parsePolicyAmount(policy.policies.dailySpend))}${RESET}`);
+  console.log(`  ${DIM}daily gauge: ${displayUsdc(simulated.spentToday)} / ${displayUsdc(parseBaseUnitPolicyAmount(policy.policies.dailySpend))}${RESET}`);
 
   heading('An oversized action');
   render(await guarded.execute({

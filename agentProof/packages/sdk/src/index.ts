@@ -16,7 +16,7 @@ export { PolicyEngine } from './core/PolicyEngine.ts';
 export type { PolicyEngineOptions } from './core/PolicyEngine.ts';
 
 export { definePolicy, resolvePolicy, policyHash, canonicalJSON, PolicyValidationError } from './core/policy.ts';
-export { usdc, parsePolicyAmount, formatUsdc, displayUsdc, utcDay } from './utils/units.ts';
+export { usdc, parsePolicyAmount, parseBaseUnitPolicyAmount, formatUsdc, displayUsdc, utcDay } from './utils/units.ts';
 
 export {
   MaxTransactionPolicy,
@@ -78,6 +78,7 @@ export type {
   PolicyDocument,
   PolicyEvaluation,
   PolicyResult,
+  PolicyRow,
   PolicyState,
   PolicyViolation,
   ProofReference,

@@ -4,8 +4,17 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "scripts": { "typecheck": "tsc --project tsconfig.json" },
-  "dependencies": { "@agentproof/sdk": "workspace:*" },
-  "optionalDependencies": { "@hashgraph/sdk": "^2.62.0" },
-  "devDependencies": { "typescript": "^5.7.2" }
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@agentproof/sdk": "workspace:*"
+  },
+  "optionalDependencies": {
+    "@hashgraph/sdk": "^2.62.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.2"
+  }
 }

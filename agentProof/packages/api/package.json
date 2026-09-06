@@ -6,7 +6,7 @@
   "main": "./src/index.ts",
   "scripts": {
     "start": "tsx src/index.ts",
-    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
@@ -15,5 +15,5 @@
   "optionalDependencies": {
     "@hashgraph/sdk": "^2.62.0"
   },
-  "devDependencies": { "typescript": "^5.7.2", "@types/node": "^22.10.1" }
+  "devDependencies": { "typescript": "^5.7.2", "@types/node": "^22.10.1", "tsx": "^4.19.2" }
 }

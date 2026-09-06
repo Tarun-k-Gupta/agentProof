@@ -23,10 +23,10 @@ const POLICY: PolicyDocument = {
   chainId: 11155111,
   asset: { address: USDC, decimals: 6 },
   policies: {
-    maxTransaction: '100',
-    dailySpend: '500',
-    approvalThreshold: '100',
-    minBalance: '10',
+    maxTransaction: '100000000',
+    dailySpend: '500000000',
+    approvalThreshold: '100000000',
+    minBalance: '10000000',
     allowedContracts: [ROUTER],
     allowedRecipients: [ME],
   },
@@ -82,6 +82,7 @@ describe('POST /v1/verify', () => {
     const body = await (
       await post('/v1/verify', {
         action: {
+          value: '0',
           to: ROUTER,
           data: encodeSwapExactIn({ recipient: ME, amountIn: usdc(80), tokenIn: USDC, tokenOut: WETH }),
           chainId: 11155111,
@@ -98,6 +99,7 @@ describe('POST /v1/verify', () => {
     const body = await (
       await post('/v1/verify', {
         action: {
+          value: '0',
           to: ROUTER,
           data: encodeSwapExactIn({ recipient: ME, amountIn: usdc(250), tokenIn: USDC, tokenOut: WETH }),
           chainId: 11155111,
@@ -113,7 +115,7 @@ describe('POST /v1/verify', () => {
   test('blocks a transfer to an unlisted recipient', async () => {
     const body = await (
       await post('/v1/verify', {
-        action: { to: USDC, data: encodeErc20Transfer(ATTACKER, usdc(10)), chainId: 11155111 },
+        action: { to: USDC, data: encodeErc20Transfer(ATTACKER, usdc(10)), value: '0', chainId: 11155111 },
       })
     ).json();
     assert.equal(body.decision, 'BLOCK');
@@ -184,7 +186,7 @@ describe('dashboard stream', () => {
     const reader = response.body!.getReader();
     await reader.read(); // the ': connected' preamble
 
-    await post('/v1/publish', { type: 'decision', data: { decision: 'BLOCK', reason: 'test' } });
+    await post('/v1/internal/publish', { type: 'decision', data: { decision: 'BLOCK', reason: 'test' } });
 
     const chunk = new TextDecoder().decode((await reader.read()).value);
     assert.match(chunk, /event: decision/);

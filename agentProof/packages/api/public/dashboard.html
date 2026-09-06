@@ -80,12 +80,15 @@
   .gauge-wrap { position: sticky; bottom: 0; background: var(--bg); padding-top: 14px; }
   .gauge { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
   .gauge > div { height: 100%; background: var(--teal); transition: width .4s ease; }
+  @media (prefers-reduced-motion: reduce) { .gauge > div { transition: none; } }
   .gauge-labels {
     display: flex; justify-content: space-between; font-size: 12.5px;
     color: var(--muted); margin-bottom: 6px;
   }
 
   .proof { margin-top: 10px; font-size: 12.5px; }
+  details.proof { border-top: 1px solid var(--line); padding-top: 10px; }
+  details.proof summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
   .proof .status { font-weight: 620; }
   .proof .PROVEN { color: var(--teal); }
   .proof .NOT_RUN, .proof .UNPROVEN { color: var(--hold); }
@@ -95,10 +98,14 @@
   .empty { color: var(--muted); font-size: 13.5px; }
   .approve-row { margin-top: 12px; display: flex; gap: 8px; font-size: 13px; color: var(--muted); }
   .approve-row button {
-    font: inherit; padding: 5px 14px; border-radius: 6px; cursor: pointer;
+    font: inherit; min-height: 44px; padding: 8px 14px; border-radius: 6px; cursor: pointer;
     border: 1px solid var(--line); background: #fff; color: var(--ink);
   }
   .approve-row button[data-approve="yes"] { background: var(--teal); border-color: var(--teal); color: #fff; }
+  button:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid var(--teal-dim); outline-offset: 2px; }
+  .login { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .login input { min-height: 44px; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; }
+  .login button { min-height: 44px; border: 1px solid var(--teal); color: #fff; background: var(--teal); border-radius: 6px; padding: 0 14px; }
   a { color: var(--teal); }
 </style>
 </head>
@@ -107,17 +114,21 @@
     <h1>AgentProof</h1>
     <span class="claim">Trust the agent to decide. Don't trust it to enforce its own limits.</span>
     <span class="agent" id="agent">connecting…</span>
+    <form class="login" id="login-form" hidden>
+      <input id="admin-token" name="token" type="password" autocomplete="current-password" placeholder="Admin token">
+      <button type="submit">Unlock</button>
+    </form>
   </header>
 
   <main>
     <section>
       <h2>What the agent is thinking</h2>
-      <div id="reasoning"><p class="empty">Waiting for the agent to propose something.</p></div>
+      <div id="reasoning" aria-live="polite"><p class="empty">Waiting for the agent to propose something.</p></div>
     </section>
 
     <section>
       <h2>What AgentProof did about it</h2>
-      <div id="decisions"><p class="empty">No decisions yet.</p></div>
+      <div id="decisions" aria-live="polite"><p class="empty">No decisions yet.</p></div>
 
       <div class="gauge-wrap">
         <div class="gauge-labels">
@@ -151,44 +162,64 @@ const usd = (base) => {
 const el = (id) => document.getElementById(id);
 const state = { limit: 0n, spent: 0n };
 
+function textNode(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  node.textContent = text ?? '';
+  return node;
+}
+
+function clearEmpty(container) {
+  if (container.querySelector('.empty')) container.textContent = '';
+}
+
 function renderDecision(result) {
   const kind = result.decision === 'ALLOW' ? 'allow' : result.decision === 'BLOCK' ? 'block' : 'approval';
   const node = document.createElement('div');
   node.className = `decision ${kind}`;
 
-  const rows = (result.policyRows ?? []).map((row) => `
-    <tr>
-      <td class="name">${row.name}</td>
-      <td class="verdict ${row.passed ? 'pass' : 'fail'}">${row.passed ? 'pass' : 'fail'}${
-        row.provenance ? `<span class="prov">${row.provenance}</span>` : ''
-      }</td>
-    </tr>`).join('');
+  node.append(
+    textNode('span', `chip ${kind}`, result.decision),
+    textNode('div', 'summary', result.intent?.summary ?? ''),
+    textNode('div', 'reason', result.reason ?? ''),
+  );
 
-  const proof = result.proof
-    ? `<div class="proof">invariant ${result.proof.property}:
-         <span class="status ${result.proof.status}">${result.proof.status}</span>
-         <span class="mono">(${result.proof.tool}, ${result.proof.solverTimeMs} ms)</span></div>`
-    : '';
+  if (result.policyRows?.length) {
+    const table = document.createElement('table');
+    for (const row of result.policyRows) {
+      const tr = document.createElement('tr');
+      tr.append(textNode('td', 'name', row.name ?? row.id));
+      const verdict = textNode('td', `verdict ${row.passed ? 'pass' : 'fail'}`, row.passed ? 'pass' : 'fail');
+      if (row.provenance) verdict.append(textNode('span', 'prov', row.provenance));
+      tr.append(verdict);
+      table.append(tr);
+    }
+    node.append(table);
+  }
 
-  node.innerHTML = `
-    <span class="chip ${kind}">${result.decision}</span>
-    <div class="summary">${result.intent?.summary ?? ''}</div>
-    <div class="reason">${result.reason ?? ''}</div>
-    ${rows ? `<table>${rows}</table>` : ''}
-    ${proof}
-    ${result.txHash ? `<div class="proof mono">tx ${result.txHash}</div>` : ''}`;
+  if (result.proof) {
+    node.append(
+      textNode(
+        'div',
+        'proof',
+        `invariant ${result.proof.property}: ${result.proof.status} (${result.proof.tool}, ${result.proof.solverTimeMs} ms)`,
+      ),
+    );
+  }
+
+  if (result.txHash) node.append(textNode('div', 'proof mono', `tx ${result.txHash}`));
 
   const container = el('decisions');
-  if (container.querySelector('.empty')) container.innerHTML = '';
+  clearEmpty(container);
   container.prepend(node);
 }
 
 function renderThought(entry) {
   const node = document.createElement('div');
   node.className = 'thought';
-  node.innerHTML = `<p>${entry.reasoning}</p><p class="meta">${entry.proposal ?? ''}</p>`;
+  node.append(textNode('p', '', entry.reasoning), textNode('p', 'meta', entry.proposal ?? ''));
   const container = el('reasoning');
-  if (container.querySelector('.empty')) container.innerHTML = '';
+  clearEmpty(container);
   container.prepend(node);
 }
 
@@ -206,14 +237,20 @@ function renderGauge() {
 function renderApproval(request) {
   const node = document.createElement('div');
   node.className = 'decision approval';
-  node.innerHTML = `
-    <span class="chip approval">APPROVAL NEEDED</span>
-    <div class="summary">${request.intent?.summary ?? ''}</div>
-    <div class="reason">${request.reason ?? ''}</div>
-    <div class="approve-row">
-      <button data-approve="yes">Approve</button>
-      <button data-approve="no">Decline</button>
-    </div>`;
+  node.append(
+    textNode('span', 'chip approval', 'APPROVAL NEEDED'),
+    textNode('div', 'summary', request.intent?.summary ?? ''),
+    textNode('div', 'reason', request.reason ?? ''),
+  );
+
+  const row = document.createElement('div');
+  row.className = 'approve-row';
+  const approve = textNode('button', '', 'Approve');
+  approve.dataset.approve = 'yes';
+  const decline = textNode('button', '', 'Decline');
+  decline.dataset.approve = 'no';
+  row.append(approve, decline);
+  node.append(row);
 
   node.querySelectorAll('button').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -223,19 +260,42 @@ function renderApproval(request) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: request.id, approved }),
       });
-      node.querySelector('.approve-row').textContent = approved ? 'Approved' : 'Declined';
+      row.textContent = approved ? 'Approved' : 'Declined';
     });
   });
 
   const container = el('decisions');
-  if (container.querySelector('.empty')) container.innerHTML = '';
+  clearEmpty(container);
   container.prepend(node);
+}
+
+async function renderProofDrawer() {
+  const proofs = await fetch('/v1/proofs').then((r) => r.json()).catch(() => null);
+  if (!proofs) return;
+  const drawer = document.createElement('details');
+  drawer.className = 'proof';
+  drawer.append(textNode('summary', '', 'Proof artifacts'));
+  for (const proof of proofs.proofs ?? []) {
+    drawer.append(textNode('div', 'mono', `${proof.property}: ${proof.status} ${proof.artifactPath ?? ''}`));
+    if (proof.counterexample) drawer.append(textNode('div', 'fail', `counterexample: ${proof.counterexample}`));
+  }
+  el('decisions').append(drawer);
+}
+
+async function login(token) {
+  const response = await fetch('/v1/dashboard/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+  return response.ok;
 }
 
 async function boot() {
   try {
     const health = await (await fetch('/health')).json();
-    el('agent').textContent = health.agent ?? 'unknown agent';
+    el('agent').textContent = `${health.agent ?? 'unknown agent'} · ${health.mode ?? 'simulation'}`;
+    if (health.dashboardAuth && !health.dashboardSession) el('login-form').hidden = false;
 
     const spend = health.account
       ? await fetch(`/v1/spend/${health.account}`).then((r) => r.json()).catch(() => null)
@@ -245,6 +305,7 @@ async function boot() {
       state.spent = BigInt(spend.spentGraph ?? 0);
       renderGauge();
     }
+    await renderProofDrawer();
   } catch {
     el('agent').textContent = 'API unreachable';
   }
@@ -253,6 +314,13 @@ async function boot() {
   // no channel back.
   try {
     const stream = new EventSource('/v1/stream');
+    stream.onerror = () => {
+      if (!document.querySelector('.stream-status')) {
+        el('decisions').prepend(
+          textNode('p', 'empty stream-status', 'Dashboard stream disconnected or locked. Unlock with the admin token if required.'),
+        );
+      }
+    };
     stream.addEventListener('decision', (event) => {
       const payload = JSON.parse(event.data);
       renderDecision(payload);
@@ -267,6 +335,13 @@ async function boot() {
     /* no stream configured; the static view above is still correct */
   }
 }
+
+el('login-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const ok = await login(el('admin-token').value);
+  if (ok) location.reload();
+  else el('agent').textContent = 'invalid dashboard token';
+});
 
 boot();
 </script>

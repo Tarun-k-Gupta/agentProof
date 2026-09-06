@@ -26,7 +26,7 @@ interface DailyAggregateResponse {
 }
 
 const DAILY_SPEND_QUERY = `
-  query DailySpend($account: String!, $day: Int!) {
+  query DailySpend($account: Bytes!, $day: Int!) {
     dailyAggregates(where: { account: $account, day: $day }, first: 1) {
       id
       totalOutflow
