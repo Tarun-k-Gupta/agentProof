@@ -8,6 +8,8 @@
  *
  *   pnpm demo
  */
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { createLiveBackend, readLiveConfig, type LiveBackend } from './live-backend.ts';
 import {
@@ -124,6 +126,11 @@ async function main(): Promise<void> {
     policy,
     state,
     logger,
+    // Scene 10 shows proof status, so it has to actually load the artifacts.
+    // Without this the demo reported NOT_RUN even in a checkout where the
+    // verifier had just run and both properties were PROVEN — the one place
+    // the demo could accidentally understate what the project does.
+    proofs: join(dirname(fileURLToPath(import.meta.url)), '../proofs'),
     enforcement: live
       ? { executor: live.executor, chain: live.chain }
       : { executor: simulated },
