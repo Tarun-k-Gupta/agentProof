@@ -20,6 +20,13 @@ const api = await createApiServer({
     priceDecode: process.env.X402_PRICE_DECODE_USDC ?? '0.005',
     baseUrl: process.env.API_PUBLIC_URL ?? 'http://localhost:8402',
   },
+  chain: process.env.SEPOLIA_RPC_URL
+    ? {
+        rpcUrl: process.env.SEPOLIA_RPC_URL,
+        chainId: Number(process.env.CHAIN_ID ?? 11155111),
+        universalResolver: process.env.ENS_UNIVERSAL_RESOLVER,
+      }
+    : undefined,
   hedera:
     process.env.HCS_AUDIT_TOPIC_ID && process.env.HEDERA_PRIVATE_KEY
       ? {

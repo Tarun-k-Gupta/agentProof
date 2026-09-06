@@ -9,6 +9,7 @@
  *   pnpm demo
  */
 import { readFile } from 'node:fs/promises';
+import { createLiveBackend, readLiveConfig, type LiveBackend } from './live-backend.ts';
 import {
   SimulatedAccount,
   MemoryStateProvider,
@@ -74,6 +75,10 @@ function render(result: PolicyResult): void {
   if (result.txHash) console.log(`  ${DIM}└ tx ${result.txHash}${RESET}`);
 }
 
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 async function main(): Promise<void> {
   const policy = JSON.parse(
     await readFile(new URL('../agent.policy.json', import.meta.url), 'utf8'),
@@ -99,11 +104,29 @@ async function main(): Promise<void> {
   const state = new MemoryStateProvider();
   state.setBalance(account, asset, usdc(1_000));
 
+  // Live mode runs the identical script against real Sepolia. Nothing about the
+  // steps changes — that is the point. Incomplete configuration falls back to
+  // the simulator loudly rather than silently faking transactions.
+  const logger = new ConsoleLogger('warn');
+  const liveConfig = readLiveConfig(logger);
+  let live: LiveBackend | undefined;
+
+  if (liveConfig) {
+    try {
+      live = await createLiveBackend(liveConfig, logger);
+      console.log(`${DIM}  running LIVE against Sepolia — transactions are real${RESET}`);
+    } catch (error) {
+      console.log(`${YELLOW}  live mode unavailable (${describe(error)}); using the simulator${RESET}`);
+    }
+  }
+
   const proof = await createAgentProof({
     policy,
     state,
-    logger: new ConsoleLogger('warn'),
-    enforcement: { executor: simulated },
+    logger,
+    enforcement: live
+      ? { executor: live.executor, chain: live.chain }
+      : { executor: simulated },
     onDecision: (result) => {
       if (result.decision === 'ALLOW' && result.txHash) {
         state.addSpend(account, Math.floor(Date.now() / 1000 / 86_400), result.intent.notionalUSDC);
@@ -203,22 +226,29 @@ async function main(): Promise<void> {
   console.log(`  ${DIM}Closing the SDK. Signing a 250 USDC transfer directly with the session key.${RESET}`);
   simulated.advance(86_400_000); // fresh day, so only the per-tx limit is in play
   try {
-    simulated.sendUnchecked({
-      account,
-      to: asset,
-      data: encodeErc20Transfer(router, usdc(250)),
-      value: 0n,
-    });
+    const bypass = { to: asset, data: encodeErc20Transfer(router, usdc(250)), value: 0n };
+
+    if (live) {
+      const txHash = await live.sendUnchecked(bypass);
+      console.log(`  ${DIM}submitted ${txHash}${RESET}`);
+      console.log(`  ${DIM}${live.explorerUrl(txHash)}${RESET}`);
+    } else {
+      simulated.sendUnchecked({ account, ...bypass });
+    }
     console.log(`  ${RED}✖ THE ACCOUNT ACCEPTED IT. The thesis is broken; stop and fix this.${RESET}`);
     process.exitCode = 1;
   } catch (error) {
-    if (error instanceof PolicyRevert) {
-      console.log(`  ${GREEN}✔ reverted${RESET} ${error.code}`);
-      console.log(`  ${DIM}└ ${error.message}${RESET}`);
-      console.log(`  ${DIM}The SDK is convenience. This is the boundary.${RESET}`);
-    } else {
-      throw error;
-    }
+    // On chain the revert arrives as a failed simulation carrying the hook's
+    // custom error; in the simulator it is a PolicyRevert. Same event.
+    const detail = error instanceof PolicyRevert ? error.code : describe(error);
+    const isPolicyRevert =
+      error instanceof PolicyRevert || /Exceeds|TargetNotAllowed|BelowMinBalance/.test(describe(error));
+
+    if (!isPolicyRevert) throw error;
+
+    console.log(`  ${GREEN}✔ reverted${RESET} ${detail}`);
+    if (error instanceof PolicyRevert) console.log(`  ${DIM}└ ${error.message}${RESET}`);
+    console.log(`  ${DIM}The SDK is convenience. This is the boundary.${RESET}`);
   }
 
   heading('Proof status');

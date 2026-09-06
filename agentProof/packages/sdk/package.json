@@ -4,21 +4,13 @@
   "description": "Verifiable safety runtime for autonomous agents: policy evaluation off-chain, enforcement at the wallet boundary.",
   "license": "MIT",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./decode/uniswap": {
-      "types": "./dist/decode/uniswapV4.d.ts",
-      "import": "./dist/decode/uniswapV4.js"
-    },
-    "./testing": {
-      "types": "./dist/testing/SimulatedAccount.d.ts",
-      "import": "./dist/testing/SimulatedAccount.js"
-    }
+    ".": "./src/index.ts",
+    "./decode/uniswap": "./src/decode/uniswapV4.ts",
+    "./testing": "./src/testing/SimulatedAccount.ts",
+    "./adapters": "./src/adapters/index.ts"
   },
   "files": [
     "dist",
@@ -36,16 +28,44 @@
   "scripts": {
     "test": "tsx --test tests/unit/*.test.ts",
     "typecheck": "tsc --project tsconfig.json",
-    "build": "tsc --project tsconfig.build.json"
+    "build": "tsc --project tsconfig.build.json",
+    "prepublishOnly": "pnpm build"
   },
   "dependencies": {},
-  "peerDependencies": {},
+  "peerDependencies": {
+    "viem": "^2.21.0"
+  },
   "devDependencies": {
     "typescript": "^5.7.2",
     "@types/node": "^22.10.1",
     "tsx": "^4.19.2"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./decode/uniswap": {
+        "types": "./dist/decode/uniswapV4.d.ts",
+        "import": "./dist/decode/uniswapV4.js"
+      },
+      "./testing": {
+        "types": "./dist/testing/SimulatedAccount.d.ts",
+        "import": "./dist/testing/SimulatedAccount.js"
+      },
+      "./adapters": {
+        "types": "./dist/adapters/index.d.ts",
+        "import": "./dist/adapters/index.js"
+      }
+    }
+  },
+  "peerDependenciesMeta": {
+    "viem": {
+      "optional": true
+    }
   }
 }

@@ -93,6 +93,12 @@
 
   footer { padding: 14px 28px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }
   .empty { color: var(--muted); font-size: 13.5px; }
+  .approve-row { margin-top: 12px; display: flex; gap: 8px; font-size: 13px; color: var(--muted); }
+  .approve-row button {
+    font: inherit; padding: 5px 14px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+  }
+  .approve-row button[data-approve="yes"] { background: var(--teal); border-color: var(--teal); color: #fff; }
   a { color: var(--teal); }
 </style>
 </head>
@@ -192,12 +198,48 @@ function renderGauge() {
   el('gauge-text').textContent = `${usd(state.spent)} of ${usd(state.limit)}`;
 }
 
+/**
+ * The one control on this page, and it is narrow on purpose: it resolves an
+ * approval the policy engine already escalated, by an id the server issued. It
+ * cannot create a request and it cannot approve anything that was not asked.
+ */
+function renderApproval(request) {
+  const node = document.createElement('div');
+  node.className = 'decision approval';
+  node.innerHTML = `
+    <span class="chip approval">APPROVAL NEEDED</span>
+    <div class="summary">${request.intent?.summary ?? ''}</div>
+    <div class="reason">${request.reason ?? ''}</div>
+    <div class="approve-row">
+      <button data-approve="yes">Approve</button>
+      <button data-approve="no">Decline</button>
+    </div>`;
+
+  node.querySelectorAll('button').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const approved = button.dataset.approve === 'yes';
+      await fetch('/v1/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: request.id, approved }),
+      });
+      node.querySelector('.approve-row').textContent = approved ? 'Approved' : 'Declined';
+    });
+  });
+
+  const container = el('decisions');
+  if (container.querySelector('.empty')) container.innerHTML = '';
+  container.prepend(node);
+}
+
 async function boot() {
   try {
     const health = await (await fetch('/health')).json();
     el('agent').textContent = health.agent ?? 'unknown agent';
 
-    const spend = await (await fetch(`/v1/spend/${health.account ?? ''}`)).json().catch(() => null);
+    const spend = health.account
+      ? await fetch(`/v1/spend/${health.account}`).then((r) => r.json()).catch(() => null)
+      : null;
     if (spend) {
       state.limit = BigInt(spend.limit ?? 0);
       state.spent = BigInt(spend.spentGraph ?? 0);
@@ -220,6 +262,7 @@ async function boot() {
       }
     });
     stream.addEventListener('thought', (event) => renderThought(JSON.parse(event.data)));
+    stream.addEventListener('approval', (event) => renderApproval(JSON.parse(event.data)));
   } catch {
     /* no stream configured; the static view above is still correct */
   }

@@ -45,25 +45,39 @@ hook still stops it.
 
 ```bash
 pnpm install
-pnpm demo          # the full nine-step demo, offline, no keys required
-pnpm test          # 61 tests, including a differential fuzz across 4,000 sequences
+pnpm demo          # the full demo, offline, no keys required
+pnpm test          # 80 tests, including a differential fuzz across 4,000 sequences
 ```
 
 The demo runs against an in-process model of the account and hook
 (`SimulatedAccount`), so it needs no network, no keys and no deployed contracts.
-Point `AGENTPROOF_LIVE=true` at a funded Sepolia account to run the identical
-script against the real hook.
+
+To run the identical script against real Sepolia:
+
+```bash
+AGENTPROOF_LIVE=true SEPOLIA_RPC_URL=… AGENT_SESSION_KEY=… SMART_ACCOUNT_ADDRESS=… pnpm demo
+```
+
+Nothing about the steps changes when the chain becomes real — same policy file,
+same bypass, same revert. Incomplete configuration falls back to the simulator
+*loudly*: a demo that silently degrades to fake transactions is worse than one
+that says it is simulated.
 
 ### Using the SDK
 
 ```ts
 import { createAgentProof, ENSIdentity, GraphStateProvider } from '@agentproof/sdk';
 
+const chain = new JsonRpcChainReader({ url: process.env.SEPOLIA_RPC_URL!, chainId: 11155111 });
+
 const proof = await createAgentProof({
   policy: './agent.policy.json',
   identity: new ENSIdentity({ chain, universalResolver }),
   state: new GraphStateProvider({ endpoint, apiKey, hook, chain }),
-  enforcement: { executor: smartAccountClient },
+  enforcement: {
+    executor: new EoaExecutor({ account, agentSigner }),
+    chain,   // enables the third leg of the hash binding
+  },
 });
 
 const account = await proof.protect();
@@ -75,7 +89,13 @@ decision it validates the policy, compares its hash against the one published in
 the agent's ENS record **and** the one stored in the installed hook, checks the
 agent has not been suspended, and loads whatever proof artifacts exist. Any
 mismatch throws — an agent whose three published commitments disagree does not
-get to run with the most permissive one.
+get to run with the most permissive one. It also refuses to run against an
+account with no hook installed, because advice with nothing behind it reads as
+enforcement.
+
+The hook check requires a `ChainReader`. Without one the SDK logs a warning
+saying the binding was **not** verified rather than quietly checking two legs and
+calling it three.
 
 ---
 
@@ -207,6 +227,29 @@ A proof only proves the specification we wrote, under the model checked.
 
 ---
 
+## Getting on-chain
+
+Reads and writes are deliberately asymmetric. Every read the policy engine needs
+— balances, the hook's accumulator, ENS records — is an `eth_call`, so
+`JsonRpcChainReader` does them with `fetch` and **no dependencies at all**. The
+thing making safety decisions has no supply chain.
+
+Signing is not simple enough to own, so it uses viem, imported dynamically and
+declared an optional peer dependency. You only pay for a wallet stack if you
+actually sign something.
+
+Two executors, and which you use does not change what is enforced — the hook
+runs inside the account's execution path either way:
+
+| Executor | Path | Use |
+|---|---|---|
+| `EoaExecutor` | owner EOA calls `account.execute()` | **default** |
+| `BundlerExecutor` | a real ERC-4337 UserOperation | stretch |
+
+The EOA path is the default on purpose. "The bundler does not support the chosen
+7579 account" is a live risk, and building the fallback first means bundler
+trouble costs an afternoon of polish rather than the demo.
+
 ## Privacy
 
 A safety runtime sees everything an agent does, which makes it a surveillance
@@ -262,6 +305,7 @@ executions revert in the MVP. Each has a one-line mitigation in the demo config
 
 ```
 packages/sdk/          @agentproof/sdk — the product. Zero runtime dependencies.
+  src/adapters/        JsonRpcChainReader (zero-dep reads), EoaExecutor, BundlerExecutor, viem signer
   src/core/            PolicyEngine, AgentProof, policy parsing + canonical hash
   src/policies/        the six MVP policies
   src/decode/          erc20, uniswapV4, x402, native, registry

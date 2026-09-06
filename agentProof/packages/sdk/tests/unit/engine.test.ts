@@ -272,3 +272,61 @@ describe('policy validation', () => {
     );
   });
 });
+
+describe('on-chain policy hash binding', () => {
+  /** Encodes the hook's Config struct the way `config(address)` returns it. */
+  function encodeConfig(policyHashValue: string, installed: boolean): `0x${string}` {
+    const word = (v: string) => v.replace(/^0x/, '').padStart(64, '0');
+    return ('0x' +
+      word('0') + // asset
+      word('0') + // maxTransaction
+      word('0') + // dailyLimit
+      word('0') + // minBalance
+      word(policyHashValue) + // policyHash
+      word(installed ? '1' : '0')) as `0x${string}`;
+  }
+
+  const chainReturning = (data: `0x${string}`) => ({
+    chainId: 11155111,
+    getErc20Balance: async () => 0n,
+    call: async () => data,
+    getBlockTimestamp: async () => 0,
+  });
+
+  test('starts when the hook stores the same hash as the local policy', async () => {
+    const { policy, state, account } = setup();
+    await assert.doesNotReject(
+      createAgentProof({
+        policy,
+        state,
+        enforcement: { executor: account, chain: chainReturning(encodeConfig(policyHash(policy), true)) },
+      }),
+    );
+  });
+
+  test('refuses to start when the hook stores a different hash', async () => {
+    const { policy, state, account } = setup();
+    await assert.rejects(
+      createAgentProof({
+        policy,
+        state,
+        enforcement: { executor: account, chain: chainReturning(encodeConfig('0x' + 'ff'.repeat(32), true)) },
+      }),
+      /Policy hash published by the hook does not match/,
+    );
+  });
+
+  // Advice with nothing behind it is worse than no advice, because it reads as
+  // enforcement. If the hook is not installed, the SDK does not run.
+  test('refuses to run against an account with no hook installed', async () => {
+    const { policy, state, account } = setup();
+    await assert.rejects(
+      createAgentProof({
+        policy,
+        state,
+        enforcement: { executor: account, chain: chainReturning(encodeConfig(policyHash(policy), false)) },
+      }),
+      /not installed/,
+    );
+  });
+});

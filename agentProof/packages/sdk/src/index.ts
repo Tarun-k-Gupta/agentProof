@@ -56,6 +56,11 @@ export {
 } from './privacy/index.ts';
 export type { PublicAuditRecord } from './privacy/index.ts';
 
+export { JsonRpcChainReader, RpcError } from './adapters/JsonRpcChainReader.ts';
+export { EoaExecutor, BundlerExecutor, ENTRY_POINT_V07 } from './adapters/executors.ts';
+export type { Signer } from './adapters/executors.ts';
+export { createViemSigner } from './adapters/viemSigner.ts';
+
 export { SimulatedAccount, PolicyRevert } from './testing/SimulatedAccount.ts';
 export type { SimulatedConfig } from './testing/SimulatedAccount.ts';
 

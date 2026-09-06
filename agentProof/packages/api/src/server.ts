@@ -7,6 +7,9 @@ import {
   MemoryStateProvider,
   PolicyEngine,
   ProofRegistry,
+  JsonRpcChainReader,
+  ENSIdentity,
+  DashboardApprover,
   createDefaultRegistry,
   resolvePolicy,
   AllowlistPolicy,
@@ -29,6 +32,7 @@ import {
   type RouteContext,
 } from './routes/index.ts';
 import { fetchHttpClient } from './http.ts';
+import { EventStream } from './stream.ts';
 
 /**
  * The AgentProof Verification API.
@@ -63,6 +67,7 @@ export interface ServerOptions {
     baseUrl: string;
   };
   hedera?: { accountId: string; privateKey: string; topicId: string; network: 'testnet' | 'mainnet' };
+  chain?: { rpcUrl: string; chainId: number; universalResolver?: string };
 }
 
 export async function createApiServer(options: ServerOptions) {
@@ -71,20 +76,85 @@ export async function createApiServer(options: ServerOptions) {
   const state = new MemoryStateProvider();
   const proofs = await ProofRegistry.load(join(here, '../../../proofs'));
 
+  const canReadBalances = Boolean(options.chain?.rpcUrl);
+
   const engine = new PolicyEngine({
     decoders: createDefaultRegistry(),
     decoderContext: { account: policy.account, trackedAsset: policy.asset, decimals: policy.decimals },
     proofs: proofs.asMap(),
+    // minBalance needs a live balance read. Without an RPC the API has no way
+    // to know the account's balance, and evaluating the policy against a
+    // default of zero would block every action for a reason that is not true.
+    // We drop the policy and say so in the response instead of guessing.
     policies: [
       new AllowlistPolicy(policy.allowedContracts, policy.allowedRecipients),
       new MaxTransactionPolicy(policy.maxTransaction),
-      new MinBalancePolicy(policy.minBalance),
+      ...(canReadBalances ? [new MinBalancePolicy(policy.minBalance)] : []),
       new DailySpendPolicy(policy.dailySpend),
       new ApprovalThresholdPolicy(policy.approvalThreshold),
     ],
   });
 
-  const context: RouteContext = { engine, policy, state, proofs };
+  const stream = new EventStream();
+  const approver = new DashboardApprover((request) =>
+    stream.publish({ type: 'approval', data: { id: request.id, reason: request.reason, intent: request.intent } }),
+  );
+
+  const context: RouteContext = {
+    engine,
+    policy,
+    state,
+    proofs,
+    unevaluatedPolicies: canReadBalances
+      ? []
+      : [{ policy: 'minBalance', reason: 'no RPC configured, so the account balance cannot be read' }],
+  };
+
+  // Live chain reads. Optional: without an RPC the API still answers, and the
+  // reconciliation view reports null rather than inventing a number.
+  if (options.chain?.rpcUrl) {
+    const chain = new JsonRpcChainReader({ url: options.chain.rpcUrl, chainId: options.chain.chainId, logger });
+
+    context.readOnchainSpend = async (account: string) => {
+      try {
+        const data = `${WINDOW_SELECTOR}${account.slice(2).toLowerCase().padStart(64, '0')}` as `0x${string}`;
+        const raw = await chain.call(policy.hook, data);
+        if (raw.length < 2 + 128) return undefined;
+        const day = Number(BigInt(`0x${raw.slice(2, 66)}`));
+        const spent = BigInt(`0x${raw.slice(66, 130)}`);
+        return day === utcDayNow() ? spent : 0n;
+      } catch (error) {
+        logger.log('warn', 'on-chain spend read failed', { error: String(error) });
+        return undefined;
+      }
+    };
+
+    if (options.chain.universalResolver) {
+      const identity = new ENSIdentity({
+        chain,
+        universalResolver: options.chain.universalResolver as `0x${string}`,
+        logger,
+      });
+
+      // Resolve the policy pointer live, so /v1/policy is an ENS read rather
+      // than a copy of our own file with a name attached.
+      context.resolvePolicyByName = async (name: string) => {
+        const [publishedHash, hook, status] = await Promise.all([
+          identity.resolvePolicyHash(name),
+          identity.resolveHook(name).catch(() => null),
+          identity.resolveStatus(name).catch(() => 'unknown'),
+        ]);
+        return {
+          resolvedVia: 'ensv2',
+          publishedPolicyHash: publishedHash,
+          matchesLocal: publishedHash.toLowerCase() === policy.hash.toLowerCase(),
+          hook,
+          status,
+          document: options.policy,
+        };
+      };
+    }
+  }
 
   // --- x402 -----------------------------------------------------------------
   let gate: ReturnType<typeof createX402Gate> | undefined;
@@ -150,6 +220,8 @@ export async function createApiServer(options: ServerOptions) {
         ok: true,
         policyHash: policy.hash,
         agent: options.policy.agent,
+        account: policy.account,
+        hook: policy.hook,
         proofs: proofs.all().map((p) => ({ property: p.property, status: p.status })),
         x402: options.x402?.enabled ?? false,
       });
@@ -191,6 +263,37 @@ export async function createApiServer(options: ServerOptions) {
       return;
     }
 
+    if (path === '/v1/stream' && req.method === 'GET') {
+      stream.subscribe(res);
+      return;
+    }
+
+    // The dashboard's approval click. Guarded by an id the server issued, and it
+    // resolves a request that is already pending — it cannot create one, and it
+    // cannot approve anything the policy engine did not escalate.
+    if (path === '/v1/approve' && req.method === 'POST') {
+      const body = (await readJson(req)) as { id?: string; approved?: boolean };
+      if (typeof body.id !== 'string') {
+        await respondJson(res, 400, { error: 'id is required' });
+        return;
+      }
+      const settled = approver.resolve(body.id, { approved: body.approved === true, by: 'dashboard:owner' });
+      await respondJson(res, settled ? 200 : 404, {
+        settled,
+        error: settled ? undefined : 'no pending approval with that id',
+      });
+      return;
+    }
+
+    // Publishes a decision to connected dashboards. Used by the demo runner and
+    // by agents that want their decisions visible; it stores nothing.
+    if (path === '/v1/publish' && req.method === 'POST') {
+      const body = (await readJson(req)) as { type?: string; data?: unknown };
+      stream.publish({ type: (body.type as 'decision' | 'thought') ?? 'decision', data: body.data });
+      await respondJson(res, 202, { published: true, clients: stream.clientCount });
+      return;
+    }
+
     if (path === '/v1/proofs' && req.method === 'GET') {
       await respondJson(res, 200, await proofsRoute(context));
       return;
@@ -202,6 +305,8 @@ export async function createApiServer(options: ServerOptions) {
   return {
     server,
     audit,
+    stream,
+    approver,
     policyHash: policy.hash,
     listen(port = options.port ?? 8402): Promise<void> {
       return new Promise((resolve) => {
@@ -219,6 +324,13 @@ export async function createApiServer(options: ServerOptions) {
       return new Promise((resolve) => server.close(() => resolve()));
     },
   };
+}
+
+/** keccak256('window(address)').slice(0, 10) — derived in the SDK, mirrored here. */
+const WINDOW_SELECTOR = '0xf3dac3da';
+
+function utcDayNow(): number {
+  return Math.floor(Date.now() / 1000 / 86_400);
 }
 
 function corsHeaders(): Record<string, string> {

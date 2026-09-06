@@ -8,6 +8,8 @@ export interface RouteContext {
   policy: ResolvedPolicy;
   state: StateProvider;
   proofs: ProofRegistry;
+  /** Policies this deployment cannot evaluate, and why. Reported, never hidden. */
+  unevaluatedPolicies?: Array<{ policy: string; reason: string }>;
   agentProof?: AgentProof;
   /** resolves an ENS name to its live policy document */
   resolvePolicyByName?: (name: string) => Promise<unknown>;
@@ -53,6 +55,9 @@ export async function verifyRoute(ctx: RouteContext, body: { action?: Record<str
       note: 'This endpoint is advisory. Enforcement is the ERC-7579 hook installed on the account.',
       hook: ctx.policy.hook,
       account: ctx.policy.account,
+      // A caller must be able to tell the difference between "this passed every
+      // policy" and "this passed every policy we were able to check".
+      unevaluatedPolicies: ctx.unevaluatedPolicies ?? [],
     },
   };
 }

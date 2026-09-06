@@ -8,7 +8,7 @@ import type {
   PolicyState,
   ResolvedPolicy,
 } from './types.ts';
-import type { Approver, Clock, Executor, IdentityProvider, Logger, StateProvider } from '../ports/index.ts';
+import type { Approver, ChainReader, Clock, Executor, IdentityProvider, Logger, StateProvider } from '../ports/index.ts';
 import { systemClock } from '../ports/index.ts';
 import { PolicyEngine } from './PolicyEngine.ts';
 import { resolvePolicy } from './policy.ts';
@@ -32,7 +32,7 @@ export interface AgentProofConfig {
   state: StateProvider;
   identity?: IdentityProvider;
   approver?: Approver;
-  enforcement?: { executor: Executor; hook?: Address; account?: Address };
+  enforcement?: { executor: Executor; hook?: Address; account?: Address; chain?: ChainReader };
   decoders?: DecoderRegistry;
   proofs?: ProofRegistry | string;
   logger?: Logger;
@@ -125,9 +125,24 @@ export async function createAgentProof(config: AgentProofConfig) {
         account: config.enforcement.account ?? policy.account,
         hook: config.enforcement.hook ?? policy.hook,
         executor: config.enforcement.executor,
+        chain: config.enforcement.chain,
         logger,
       })
     : undefined;
+
+  // --- binding check 2: the hook -------------------------------------------
+  // The third publisher of the same commitment. With the ENS check above, three
+  // independent systems must agree on which policy this agent runs under: a
+  // local file, a public name, and the contract doing the enforcing. An operator
+  // who edits one of them gets a refusal rather than a wider limit.
+  if (enforcer && config.enforcement?.chain) {
+    await enforcer.assertInstalledPolicyHash(policy.hash);
+    logger.log('info', 'hook policy binding verified', { hook: config.enforcement.hook ?? policy.hook });
+  } else if (enforcer) {
+    logger.log('warn', 'hook policy binding NOT verified: no ChainReader supplied', {
+      note: 'pass enforcement.chain to check the hash stored on-chain matches the local policy',
+    });
+  }
 
   return new AgentProof({ policy, engine, enforcer, proofs, logger, clock, config });
 }

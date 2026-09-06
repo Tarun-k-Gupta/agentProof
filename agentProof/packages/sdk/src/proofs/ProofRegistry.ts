@@ -36,7 +36,13 @@ export class ProofRegistry {
         const parsed = JSON.parse(await readFile(join(directory, file), 'utf8')) as ProofReference;
         references.push(parsed);
       }
-      return new ProofRegistry(references);
+
+      // An empty proofs/ directory means the verifier has not been run, which is
+      // exactly what a missing directory means. Returning an empty registry
+      // instead would make the API report no properties at all — quieter than
+      // NOT_RUN, and less honest, because a reader would not know a proof was
+      // ever expected.
+      return references.length > 0 ? new ProofRegistry(references) : ProofRegistry.notRun();
     } catch {
       return ProofRegistry.notRun();
     }
