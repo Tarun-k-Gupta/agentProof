@@ -1,5 +1,12 @@
 import type { ServerResponse } from 'node:http';
-import type { AgentProof, PolicyEngine, ProofRegistry, ResolvedPolicy, StateProvider } from '@agentproof/sdk';
+import type {
+  AgentProof,
+  PolicyEngine,
+  PolicyResult,
+  ProofRegistry,
+  ResolvedPolicy,
+  StateProvider,
+} from '@agentproof/sdk';
 import { utcDay } from '@agentproof/sdk';
 import { respondJson } from '../x402/middleware.ts';
 
@@ -25,7 +32,17 @@ export interface RouteContext {
  * implementation of every decision in this repo; this route is a second product
  * surface, not a second product.
  */
-export async function verifyRoute(ctx: RouteContext, body: { agent?: string; action?: Record<string, unknown> }): Promise<unknown> {
+export interface VerifyOutcome {
+  /** The wire response. */
+  body: unknown;
+  /** The engine's own result, with bigints intact, for the audit trail. */
+  result: PolicyResult;
+}
+
+export async function verifyRoute(
+  ctx: RouteContext,
+  body: { agent?: string; action?: Record<string, unknown> },
+): Promise<VerifyOutcome> {
   if (body.agent !== undefined && body.agent !== ctx.policy.document.agent) {
     throw new BadRequestError(`unknown agent ${JSON.stringify(body.agent)}; expected ${ctx.policy.document.agent}`);
   }
@@ -46,7 +63,7 @@ export async function verifyRoute(ctx: RouteContext, body: { agent?: string; act
     now: Date.now(),
   });
 
-  return {
+  const wire = {
     decision: result.decision,
     reason: result.reason,
     violations: result.violations,
@@ -66,6 +83,8 @@ export async function verifyRoute(ctx: RouteContext, body: { agent?: string; act
       unevaluatedPolicies: ctx.unevaluatedPolicies ?? [],
     },
   };
+
+  return { body: wire, result };
 }
 
 /** POST /v1/decode — calldata to normalized intent, no state required. */

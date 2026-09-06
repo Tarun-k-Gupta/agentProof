@@ -24,9 +24,10 @@ import {
   toPublicAuditRecord,
 } from '@agentproof/sdk';
 import { readRuntimeConfig, tokenFingerprint, type RuntimeConfig } from './config.ts';
-import { Blocky402Facilitator } from './x402/blocky402.ts';
+import { Blocky402Facilitator, type Facilitator } from './x402/blocky402.ts';
 import { createX402Gate, respondJson } from './x402/middleware.ts';
-import { HcsAuditTrail, createHederaSubmitter } from './x402/hcsAudit.ts';
+import { HcsAuditTrail, createHederaSubmitter, type HcsSubmitter } from './x402/hcsAudit.ts';
+import { ReplayGuard } from './x402/replay.ts';
 import {
   decodeRoute,
   policyRoute,
@@ -76,6 +77,9 @@ export interface ServerOptions {
   graph?: { endpoint: string; apiKey: string };
   mode?: 'simulation' | 'production';
   adminToken?: string;
+  /** Test seams. Production supplies neither; both are constructed from config. */
+  facilitator?: Facilitator;
+  hcsSubmitter?: HcsSubmitter;
 }
 
 export async function createApiServer(options: ServerOptions) {
@@ -182,15 +186,20 @@ export async function createApiServer(options: ServerOptions) {
   // --- x402 -----------------------------------------------------------------
   let gate: ReturnType<typeof createX402Gate> | undefined;
   let decodeGate: ReturnType<typeof createX402Gate> | undefined;
+  // One guard across both routes: a payload is worth exactly one call, whichever
+  // priced route it is presented at.
+  const replay = new ReplayGuard();
   if (options.x402) {
-    const facilitator = new Blocky402Facilitator({
-      baseUrl: options.x402.facilitatorUrl,
-      http: fetchHttpClient,
-      logger,
-      network: options.x402.network,
-    });
+    const facilitator =
+      options.facilitator ??
+      new Blocky402Facilitator({
+        baseUrl: options.x402.facilitatorUrl,
+        http: fetchHttpClient,
+        logger,
+        network: options.x402.network,
+      });
 
-    if (options.x402.enabled) {
+    if (options.x402.enabled && facilitator instanceof Blocky402Facilitator) {
       // Fail fast rather than serving challenges we cannot settle.
       await facilitator.assertSupported();
     }
@@ -204,6 +213,7 @@ export async function createApiServer(options: ServerOptions) {
       baseUrl: options.x402.baseUrl,
       logger,
       enabled: options.x402.enabled,
+      replay,
     });
     decodeGate = createX402Gate({
       facilitator,
@@ -214,16 +224,18 @@ export async function createApiServer(options: ServerOptions) {
       baseUrl: options.x402.baseUrl,
       logger,
       enabled: options.x402.enabled,
+      replay,
     });
   }
 
   // --- HCS audit ------------------------------------------------------------
   let audit: HcsAuditTrail | undefined;
-  if (options.hedera?.topicId) {
+  const topicId = options.hedera?.topicId ?? (options.hcsSubmitter ? 'test.topic' : undefined);
+  if (topicId) {
     try {
-      const submitter = await createHederaSubmitter(options.hedera);
-      audit = new HcsAuditTrail({ topicId: options.hedera.topicId, submitter, logger, enabled: true });
-      logger.log('info', 'HCS audit trail enabled', { topicId: options.hedera.topicId });
+      const submitter = options.hcsSubmitter ?? (await createHederaSubmitter(options.hedera!));
+      audit = new HcsAuditTrail({ topicId, submitter, logger, enabled: true });
+      logger.log('info', 'HCS audit trail enabled', { topicId });
     } catch (error) {
       logger.log('warn', 'HCS audit disabled: Hedera SDK unavailable', {
         error: error instanceof Error ? error.message : String(error),
@@ -291,13 +303,25 @@ export async function createApiServer(options: ServerOptions) {
     if (path === '/v1/verify' && req.method === 'POST') {
       const body = await readJson(req);
       const work = async () => {
-        const result = await verifyRoute(context, body as { agent?: string; action?: Record<string, unknown> });
-        if (audit) audit.record(toPublicAuditRecord(result as PolicyResult, policy.account, policy.hash, new CommitmentScheme()));
-        stream.publish({ type: 'decision', data: result });
-        return result;
+        const outcome = await verifyRoute(context, body as { agent?: string; action?: Record<string, unknown> });
+        stream.publish({ type: 'decision', data: outcome.body });
+        evaluated = outcome.result;
+        return outcome.body;
       };
-      if (gate) await gate(req, res, '/v1/verify', work);
-      else await respondJson(res, 200, await work());
+      // Captured out of band because the gate hands the wire body — which has
+      // been through JSON serialisation — to the settlement hook, and the audit
+      // projection needs the engine's bigints and timestamps.
+      let evaluated: PolicyResult | undefined;
+      const publishAudit = () => {
+        if (!audit || !evaluated) return;
+        audit.record(toPublicAuditRecord(evaluated, policy.account, policy.hash, new CommitmentScheme()));
+      };
+      if (gate) await gate(req, res, '/v1/verify', work, publishAudit);
+      else {
+        const wire = await work();
+        publishAudit();
+        await respondJson(res, 200, wire);
+      }
       return;
     }
 

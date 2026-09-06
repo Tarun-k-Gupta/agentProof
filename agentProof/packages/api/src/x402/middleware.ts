@@ -1,10 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import type { Logger } from '@agentproof/sdk';
-import { Blocky402Facilitator, type PaymentRequirements } from './blocky402.ts';
+import { type Facilitator, type PaymentRequirements, type SettlementResult } from './blocky402.ts';
+import { ReplayGuard } from './replay.ts';
 
 export interface X402Options {
-  facilitator: Blocky402Facilitator;
+  facilitator: Facilitator;
   network: string;
   asset: string;
   payTo: string;
@@ -14,6 +15,8 @@ export interface X402Options {
   logger?: Logger;
   /** disables gating entirely; used only for local development */
   enabled: boolean;
+  /** shared across routes so a payload paid for /v1/decode cannot be replayed at /v1/verify */
+  replay?: ReplayGuard;
 }
 
 /**
@@ -33,14 +36,24 @@ export interface X402Options {
  * video, and here.
  */
 export function createX402Gate(options: X402Options) {
+  const replay = options.replay ?? new ReplayGuard();
+
   return async function gate(
     req: IncomingMessage,
     res: ServerResponse,
     resource: string,
     work: () => Promise<unknown>,
+    /**
+     * Runs once the payment outcome is known. The audit record is written here
+     * rather than inside `work` so the trail records what was actually settled,
+     * not what we hoped would settle.
+     */
+    afterSettlement?: (result: unknown, settlement: SettlementResult) => void,
   ): Promise<void> {
     if (!options.enabled) {
-      await respondJson(res, 200, await work());
+      const result = await work();
+      afterSettlement?.(result, { settled: false, reason: 'x402 disabled' });
+      await respondJson(res, 200, result);
       return;
     }
 
@@ -59,39 +72,95 @@ export function createX402Gate(options: X402Options) {
 
     const header = req.headers['x-payment'];
     if (typeof header !== 'string' || header.length === 0) {
-      await respondJson(res, 402, {
-        x402Version: 1,
-        error: 'Payment required',
-        accepts: [requirements],
-      });
+      await challenge(res, requirements, 'Payment required');
       return;
     }
 
-    const verification = await options.facilitator.verify(header, requirements);
+    // Malformed payloads are rejected here rather than at the facilitator, so a
+    // caller gets a diagnosable answer and we do not spend a round trip on a
+    // header that could never have been valid.
+    if (!isWellFormedPayment(header)) {
+      await challenge(res, requirements, 'X-PAYMENT header is not base64-encoded JSON');
+      return;
+    }
+
+    // Claimed before verification, so two concurrent requests carrying the same
+    // payload cannot both pass the check and both do the work.
+    if (!replay.claim(header)) {
+      await challenge(res, requirements, 'This payment payload has already been used; obtain a new one');
+      return;
+    }
+
+    let verification: { valid: boolean; reason?: string };
+    try {
+      verification = await options.facilitator.verify(header, requirements);
+    } catch (error) {
+      // A facilitator that times out or errors is our outage, not the caller's.
+      // Release the claim so the same payment can be retried.
+      replay.release(header);
+      options.logger?.log('warn', 'facilitator verify failed', { error: String(error) });
+      await respondJson(res, 503, { error: 'payment facilitator unavailable', retryable: true });
+      return;
+    }
+
     if (!verification.valid) {
-      await respondJson(res, 402, {
-        x402Version: 1,
-        error: verification.reason ?? 'Payment verification failed',
-        accepts: [requirements],
-      });
+      replay.release(header);
+      await challenge(res, requirements, verification.reason ?? 'Payment verification failed');
       return;
     }
 
-    const result = await work();
+    let result: unknown;
+    try {
+      result = await work();
+    } catch (error) {
+      // Never settle for work we did not deliver, and let the caller reuse the
+      // payment they already made.
+      replay.release(header);
+      throw error;
+    }
 
-    const settlement = await options.facilitator.settle(header, requirements);
+    let settlement: SettlementResult;
+    try {
+      settlement = await options.facilitator.settle(header, requirements);
+    } catch (error) {
+      settlement = { settled: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+
     if (!settlement.settled) {
+      // The work is done and correct; we simply were not paid for it. Returning
+      // an error here would withhold an answer the caller is entitled to and
+      // invite a retry that does the work a second time. We hand over the result
+      // and report the failure in the payment response header and the log.
       options.logger?.log('warn', 'work completed but settlement failed', { reason: settlement.reason });
     }
 
+    afterSettlement?.(result, settlement);
+
     res.setHeader(
       'X-PAYMENT-RESPONSE',
-      Buffer.from(JSON.stringify({ success: settlement.settled, transaction: settlement.transactionId })).toString(
-        'base64',
-      ),
+      Buffer.from(
+        JSON.stringify({
+          success: settlement.settled,
+          transaction: settlement.transactionId,
+          error: settlement.settled ? undefined : (settlement.reason ?? 'settlement failed'),
+        }),
+      ).toString('base64'),
     );
     await respondJson(res, 200, result);
   };
+}
+
+async function challenge(res: ServerResponse, requirements: PaymentRequirements, error: string): Promise<void> {
+  await respondJson(res, 402, { x402Version: 1, error, accepts: [requirements] });
+}
+
+function isWellFormedPayment(header: string): boolean {
+  try {
+    JSON.parse(Buffer.from(header, 'base64').toString('utf8'));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function respondJson(res: ServerResponse, status: number, body: unknown): Promise<void> {

@@ -35,7 +35,16 @@ export interface SettlementResult {
   reason?: string;
 }
 
-export class Blocky402Facilitator {
+/**
+ * The seam the gate depends on. `Blocky402Facilitator` is the production
+ * implementation; tests supply their own rather than standing up a facilitator.
+ */
+export interface Facilitator {
+  verify(payload: string, requirements: PaymentRequirements): Promise<{ valid: boolean; reason?: string }>;
+  settle(payload: string, requirements: PaymentRequirements): Promise<SettlementResult>;
+}
+
+export class Blocky402Facilitator implements Facilitator {
   constructor(
     private readonly options: { baseUrl: string; http: HttpClient; logger?: Logger; network?: string },
   ) {}
