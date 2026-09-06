@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.12.0",
-  "engines": { "node": ">=22.6.0" },
+  "engines": {
+    "node": ">=22.6.0"
+  },
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
@@ -16,7 +18,9 @@
     "contracts:test": "forge test --root contracts -vv",
     "contracts:invariant": "FOUNDRY_PROFILE=deep forge test --root contracts --match-path 'test/invariant/*' -vv",
     "subgraph:codegen": "graph codegen subgraphs/agent-history/subgraph.yaml",
-    "subgraph:deploy": "graph deploy --studio agentproof-agent-history subgraphs/agent-history/subgraph.yaml"
+    "subgraph:deploy": "graph deploy --studio agentproof-agent-history subgraphs/agent-history/subgraph.yaml",
+    "verify:deployment": "tsx scripts/verify-deployment.ts",
+    "capture:uniswap-fixtures": "tsx scripts/capture-uniswap-fixtures.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

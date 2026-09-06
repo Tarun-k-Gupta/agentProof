@@ -1,5 +1,5 @@
 {
-  "_comment": "Written by contracts/script/Deploy.s.sol. Single source of truth for addresses — read by the SDK, the API and the dashboard. Values below are placeholders until the first deploy.",
+  "_comment": "Written by contracts/script/Deploy.s.sol. Single source of truth for addresses — read by the SDK, the API and the dashboard. Entries under `verified` were confirmed to have bytecode on Sepolia on the date shown; entries that are still the zero address have not been deployed yet, and the API refuses to start in production mode while any of them are.",
   "chainId": 11155111,
   "network": "sepolia",
   "agentPolicyHook": "0x0000000000000000000000000000000000000000",
@@ -11,6 +11,23 @@
     "address": "0x0000000000000000000000000000000000000000"
   },
   "usdc": "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238",
-  "uniswapUniversalRouter": "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad",
-  "deployedAtBlock": 0
+  "uniswapUniversalRouter": "0x3a9d48ab9751398bbfa63ad67599bb04e4bdf98b",
+  "deployedAtBlock": 0,
+  "uniswapUniversalRouterLegacy": {
+    "_comment": "The pre-v4 Universal Router. Kept here because it was previously listed as *the* router and it does have bytecode, which is exactly why the mistake survived: it has had no traffic in the window we sampled, and no v4 pool routes through it. Not allowlisted.",
+    "address": "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad"
+  },
+  "uniswapV4PoolManager": "0xe03a1074c86cfedd5c142c4f04f1a1536e203543",
+  "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+  "verified": {
+    "checkedAtBlock": 11650324,
+    "checkedOn": "2026-09-07",
+    "method": "eth_getCode against a public Sepolia node; see scripts/verify-deployment.ts",
+    "addresses": [
+      "uniswapUniversalRouter",
+      "uniswapV4PoolManager",
+      "usdc",
+      "permit2"
+    ]
+  }
 }
