@@ -22,7 +22,7 @@ contract MockAccount {
     function installHook(address _hook, bytes calldata data) external {
         hook = _hook;
         (bool ok, bytes memory err) = _hook.call(abi.encodeWithSignature("onInstall(bytes)", data));
-        require(ok, _revertReason(err));
+        if (!ok) _bubbleRevert(err);
     }
 
     /// @notice The ERC-7579 execution path: preCheck → call → postCheck.
@@ -33,7 +33,7 @@ contract MockAccount {
         bytes memory hookData = IERC7579Hook(_hook).preCheck(msg.sender, 0, msgData);
 
         (bool ok, bytes memory ret) = target.call(callData);
-        require(ok, _revertReason(ret));
+        if (!ok) _bubbleRevert(ret);
 
         IERC7579Hook(_hook).postCheck(hookData, ok, ret);
     }
@@ -53,8 +53,20 @@ contract MockAccount {
         rawExecute(_hook, asset, abi.encodeWithSignature("transfer(address,uint256)", target, actual));
     }
 
-    function _revertReason(bytes memory ret) internal pure returns (string memory) {
-        if (ret.length == 0) return "MockAccount: call failed";
+    /**
+     * @dev Re-raises a failed call's revert data unchanged, so a test can assert
+     *      on the hook's own custom errors rather than on a string this mock
+     *      invented.
+     *
+     *      Written as a statement rather than as `require(ok, _reason(ret))`,
+     *      which is how it started. Solidity evaluates a require's second
+     *      argument before it evaluates the condition, so that version raised
+     *      the *successful* return data as a revert on every passing call —
+     *      ERC-20 `transfer` returns `true`, 32 non-empty bytes, and every test
+     *      in this file failed with an unreadable empty error.
+     */
+    function _bubbleRevert(bytes memory ret) internal pure {
+        if (ret.length == 0) revert("MockAccount: call failed");
         assembly {
             revert(add(ret, 32), mload(ret))
         }

@@ -108,10 +108,7 @@ contract AgentSubnameRegistrar {
         IEnhancedAccessControl(address(registry)).grantRoles(resource, ROLE_SET_STATUS_RECORD, sessionKey);
 
         agents[label] = Agent({
-            account: account,
-            sessionKey: sessionKey,
-            policyHash: policyHash,
-            registeredAt: uint64(block.timestamp)
+            account: account, sessionKey: sessionKey, policyHash: policyHash, registeredAt: uint64(block.timestamp)
         });
 
         emit AgentRegistered(label, account, sessionKey, policyHash);

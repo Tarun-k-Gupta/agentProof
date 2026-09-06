@@ -43,6 +43,12 @@ jobs:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
       - uses: foundry-rs/foundry-toolchain@v1
+
+      # contracts/lib is gitignored and there is no submodule, so the checkout
+      # arrives without forge-std and every `forge` command below fails on a
+      # missing import rather than on anything about this repo.
+      - run: forge install foundry-rs/forge-std --no-git --root contracts
+
       - run: forge fmt --check --root contracts
       - run: forge build --root contracts
       - run: forge test --root contracts -vvv

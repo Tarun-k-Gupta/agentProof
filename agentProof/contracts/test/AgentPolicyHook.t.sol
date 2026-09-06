@@ -66,9 +66,7 @@ contract AgentPolicyHookTest is Test {
 
     /// T1: a hallucinating agent proposes an oversized action.
     function test_RevertsAboveMaxTransaction() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(PolicyLib.ExceedsMaxTransaction.selector, 250_000_000, MAX_TX)
-        );
+        vm.expectRevert(abi.encodeWithSelector(PolicyLib.ExceedsMaxTransaction.selector, 250_000_000, MAX_TX));
         account.spend(address(hook), address(usdc), router, 250_000_000);
     }
 
@@ -78,9 +76,7 @@ contract AgentPolicyHookTest is Test {
             account.spend(address(hook), address(usdc), router, 40_000_000);
         }
         // 12 * 40 = 480 spent. The 13th lands at 520 > 500.
-        vm.expectRevert(
-            abi.encodeWithSelector(PolicyLib.ExceedsDailyLimit.selector, 520_000_000, DAILY)
-        );
+        vm.expectRevert(abi.encodeWithSelector(PolicyLib.ExceedsDailyLimit.selector, 520_000_000, DAILY));
         account.spend(address(hook), address(usdc), router, 40_000_000);
     }
 
@@ -93,9 +89,7 @@ contract AgentPolicyHookTest is Test {
     /// T4: calldata declares 10 USDC but drains far more. The hook never reads
     ///     the declared amount — only the balance delta — so this is caught.
     function test_MeasuresActualOutflowNotDeclaredAmount() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(PolicyLib.ExceedsMaxTransaction.selector, 900_000_000, MAX_TX)
-        );
+        vm.expectRevert(abi.encodeWithSelector(PolicyLib.ExceedsMaxTransaction.selector, 900_000_000, MAX_TX));
         account.spendDeclaringLess(address(hook), address(usdc), router, 900_000_000, 10_000_000);
     }
 
@@ -109,9 +103,7 @@ contract AgentPolicyHookTest is Test {
         for (uint256 i; i < 4; ++i) {
             account.spend(address(hook), address(usdc), router, 100_000_000);
         }
-        vm.expectRevert(
-            abi.encodeWithSelector(AgentPolicyHook.BelowMinBalance.selector, 5_000_000, MIN_BAL)
-        );
+        vm.expectRevert(abi.encodeWithSelector(AgentPolicyHook.BelowMinBalance.selector, 5_000_000, MIN_BAL));
         account.spend(address(hook), address(usdc), router, 95_000_000);
     }
 
@@ -139,9 +131,7 @@ contract AgentPolicyHookTest is Test {
      * executes directly and the hook still stops it.
      */
     function test_RejectsExecutionThatBypassesTheSdkEntirely() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(PolicyLib.ExceedsMaxTransaction.selector, 250_000_000, MAX_TX)
-        );
+        vm.expectRevert(abi.encodeWithSelector(PolicyLib.ExceedsMaxTransaction.selector, 250_000_000, MAX_TX));
         account.rawExecute(
             address(hook),
             address(usdc),

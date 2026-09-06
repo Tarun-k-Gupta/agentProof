@@ -125,8 +125,7 @@ contract AgentPolicyHook is IERC7579Hook {
         Config memory c = config[msg.sender];
         if (!c.installed) revert NotInstalled();
 
-        (uint256 balanceBefore, uint64 today, address target) =
-            abi.decode(hookData, (uint256, uint64, address));
+        (uint256 balanceBefore, uint64 today, address target) = abi.decode(hookData, (uint256, uint64, address));
 
         uint256 balanceAfter = IERC20(c.asset).balanceOf(msg.sender);
         uint256 outflow = balanceBefore > balanceAfter ? balanceBefore - balanceAfter : 0;

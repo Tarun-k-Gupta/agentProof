@@ -20,8 +20,7 @@ interface IPermissionedRegistry {
     function setText(uint256 tokenId, string calldata key, string calldata value) external;
 
     /// @dev Applies the caller's EAC roles for `authorised` before writing.
-    function setTextAuthorised(uint256 tokenId, string calldata key, string calldata value, address authorised)
-        external;
+    function setTextAuthorised(uint256 tokenId, string calldata key, string calldata value, address authorised) external;
 
     function text(uint256 tokenId, string calldata key) external view returns (string memory);
 
