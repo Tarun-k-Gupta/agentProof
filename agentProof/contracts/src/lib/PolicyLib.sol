@@ -4,14 +4,28 @@ pragma solidity ^0.8.28;
 /**
  * @title PolicyLib
  * @notice The deterministic policy state machine enforced inside the account's
- *         execution path. Deliberately pure: no external calls, no dynamic
- *         arrays, no storage mappings. That is what makes it tractable for
- *         SMTChecker's CHC engine (see contracts/formal/PolicySpec.sol).
+ *         execution path.
  *
- * @dev Formally verified properties:
- *        P_MAX_TRANSFER    outflow_i <= maxTransaction, for every i
- *        P_DAILY_SPEND     sum(outflow within one UTC day) <= dailyLimit
+ * @dev The library is split in two on purpose.
+ *
+ *      `evaluate` is the verified core: scalar arguments, scalar returns, no
+ *      structs, no reverts, total. `applySpend` is a thin adapter that carries
+ *      the struct API the hook uses and turns a rejection into a typed revert.
+ *
+ *      That split is not stylistic. solc 0.8.28's SMTChecker does not model
+ *      `revert CustomError(...)` as terminating a path, so a guard written that
+ *      way is invisible to the CHC engine — it explores the state *after* a
+ *      revert that cannot happen and reports the assertion that follows as
+ *      violated. Memory structs cost it further precision: with both in place,
+ *      not one property here could be proved. Written as a total function over
+ *      scalars, all of them are.
+ *
+ *      Formally verified properties (contracts/formal/PolicySpec.sol):
+ *        P_MAX_TRANSFER    an allowed spend is never above maxTransaction
+ *        P_DAILY_SPEND     an allowed spend never leaves the day's total above
+ *                          dailyLimit
  *        P_WINDOW_FORWARD  the window day never moves backwards
+ *        P_NO_MUTATION     a rejected spend returns the window unchanged
  *
  *      Known accepted behaviour (threat T6): the daily window is a UTC-day
  *      bucket, not a rolling 24h window. Two full daily limits may be spent one
@@ -28,38 +42,77 @@ library PolicyLib {
         uint256 spent; // cumulative outflow recorded within `day`
     }
 
+    /// @notice Why a spend was refused, or `Allow`.
+    enum Decision {
+        Allow,
+        ExceedsMaxTransaction,
+        ExceedsDailyLimit,
+        WindowMovedBackwards
+    }
+
     error ExceedsMaxTransaction(uint256 amount, uint256 limit);
     error ExceedsDailyLimit(uint256 wouldBe, uint256 limit);
     error WindowMovedBackwards(uint64 stored, uint64 provided);
 
     /**
-     * @notice Pure state transition. Reverts iff the spend is not permitted.
-     * @param w      current window for the account
-     * @param l      the account's limits
-     * @param amount MEASURED outflow (balance delta), never a declared amount
-     * @param today  block.timestamp / 1 days
-     * @return next  the window to commit
+     * @notice The verified core. Total: it decides, and never reverts.
+     * @dev Returning the unchanged window on every rejection path is part of
+     *      the specification, not defensive habit — P_NO_MUTATION is what makes
+     *      "the accumulator cannot be advanced by a refused spend" checkable.
+     *
+     * @param day             the stored window day
+     * @param spent           cumulative outflow recorded within `day`
+     * @param maxTransaction  per-operation ceiling
+     * @param dailyLimit      per-UTC-day ceiling
+     * @param amount          MEASURED outflow (balance delta), never a declared amount
+     * @param today           block.timestamp / 1 days
+     */
+    function evaluate(
+        uint64 day,
+        uint256 spent,
+        uint256 maxTransaction,
+        uint256 dailyLimit,
+        uint256 amount,
+        uint64 today
+    ) internal pure returns (Decision decision, uint64 nextDay, uint256 nextSpent) {
+        if (today < day) return (Decision.WindowMovedBackwards, day, spent);
+        if (amount > maxTransaction) return (Decision.ExceedsMaxTransaction, day, spent);
+
+        uint256 base = (day == today) ? spent : 0; // UTC-day reset
+
+        // Checked separately rather than relying on 0.8.x's revert-on-overflow,
+        // because a revert here would make this function partial again and take
+        // the proof with it. An amount that would overflow the accumulator is,
+        // in any case, over the daily limit.
+        if (amount > type(uint256).max - base) return (Decision.ExceedsDailyLimit, day, spent);
+
+        uint256 wouldBe = base + amount;
+        if (wouldBe > dailyLimit) return (Decision.ExceedsDailyLimit, day, spent);
+
+        return (Decision.Allow, today, wouldBe);
+    }
+
+    /**
+     * @notice Struct-shaped adapter over {evaluate}. Reverts iff the spend is
+     *         not permitted.
+     * @return next the window to commit
      */
     function applySpend(Window memory w, Limits memory l, uint256 amount, uint64 today)
         internal
         pure
         returns (Window memory next)
     {
-        if (today < w.day) revert WindowMovedBackwards(w.day, today);
-        if (amount > l.maxTransaction) revert ExceedsMaxTransaction(amount, l.maxTransaction);
+        (Decision decision, uint64 nextDay, uint256 nextSpent) =
+            evaluate(w.day, w.spent, l.maxTransaction, l.dailyLimit, amount, today);
 
-        uint256 base = (w.day == today) ? w.spent : 0; // UTC-day reset
-        uint256 wouldBe = base + amount; // 0.8.x checked add
+        if (decision == Decision.WindowMovedBackwards) revert WindowMovedBackwards(w.day, today);
+        if (decision == Decision.ExceedsMaxTransaction) revert ExceedsMaxTransaction(amount, l.maxTransaction);
+        if (decision == Decision.ExceedsDailyLimit) {
+            uint256 base = (w.day == today) ? w.spent : 0;
+            revert ExceedsDailyLimit(base + amount, l.dailyLimit);
+        }
 
-        if (wouldBe > l.dailyLimit) revert ExceedsDailyLimit(wouldBe, l.dailyLimit);
-
-        next = Window({day: today, spent: wouldBe});
-
-        // --- Verified properties ------------------------------------------
-        assert(amount <= l.maxTransaction); // P_MAX_TRANSFER
-        assert(next.spent <= l.dailyLimit); // P_DAILY_SPEND
-        assert(next.day >= w.day); // P_WINDOW_FORWARD
-        // ------------------------------------------------------------------
+        next = Window({day: nextDay, spent: nextSpent});
     }
 
     /// @notice Non-reverting view of the remaining daily allowance.

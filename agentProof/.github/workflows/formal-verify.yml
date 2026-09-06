@@ -15,13 +15,21 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
 
-      - name: Install solc and z3
+      # solc dlopens libz3 by exact soname — 0.8.28 asks for libz3.so.4.12 and
+      # will not accept 4.13 or 4.16. A mismatched z3 is not an error: solc
+      # emits a warning, skips CHC analysis entirely, and produces a log with no
+      # assertion violations in it. Pin the version.
+      - name: Install solc and a matching z3
         run: |
-          pip install solc-select z3-solver
+          pip install solc-select
+          pip install --target "$RUNNER_TEMP/z3" 'z3-solver==4.12.2.0'
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/z3/z3/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
           solc-select install 0.8.28
           solc-select use 0.8.28
 
       - name: Run SMTChecker
+        env:
+          LC_ALL: C
         run: bash scripts/run-formal-verification.sh
 
       # Two failure modes are guarded here, not one:

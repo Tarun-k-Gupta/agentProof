@@ -30,8 +30,8 @@ mkdirSync(outDir, { recursive: true });
  * in one place does not silently orphan its artifact.
  */
 const PROPERTIES = [
-  { property: 'MAX_TRANSFER', needle: 'amount <= l.maxTransaction' },
-  { property: 'DAILY_SPEND', needle: 'spent <= l.dailyLimit' },
+  { property: 'MAX_TRANSFER', needle: 'amount <= maxTransaction' },
+  { property: 'DAILY_SPEND', needle: 'spent <= dailyLimit' },
 ];
 
 function classify(log, needle) {
@@ -40,9 +40,16 @@ function classify(log, needle) {
   const violated = /Assertion violation happens here/i.test(log) && log.includes(needle.split(' ')[0]);
   const unproved = /could not be proved|might happen|Assertion checker does not yet implement/i.test(log);
 
+  // PROVEN requires positive evidence, not merely the absence of complaints.
+  // Without this, a run where the CHC engine never started — no solver, a
+  // compile error, a contract name that matched nothing — produces a clean log
+  // and would be read as a proof of everything.
+  const proved = /CHC: \d+ verification condition\(s\) proved safe/i.test(log);
+  const engineRan = /CHC analysis was not possible/i.test(log) === false;
+
   if (violated) return 'COUNTEREXAMPLE';
   if (unproved) return 'UNPROVEN';
-  if (/Warning|Error/i.test(log) && !/No SMT solver/i.test(log)) return 'UNPROVEN';
+  if (!engineRan || !proved) return 'NOT_RUN';
   return 'PROVEN';
 }
 

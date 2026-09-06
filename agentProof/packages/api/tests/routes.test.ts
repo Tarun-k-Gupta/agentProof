@@ -61,9 +61,17 @@ describe('service surface', () => {
     assert.match(body.policyHash, /^0x[0-9a-f]{64}$/);
     assert.equal(body.account, ME);
     assert.equal(body.agent, 'trader.agentproof.eth');
-    // No artifacts in a fresh checkout, and the API must say so rather than
-    // implying a proof it does not have.
-    assert.deepEqual(body.proofs.map((p: { status: string }) => p.status), ['NOT_RUN', 'NOT_RUN']);
+    // Whether these are PROVEN depends on whether anyone has run the verifier
+    // in this checkout — proofs/ is generated, not committed. What /health must
+    // never do is invent a status. That the missing-artifacts case reports
+    // NOT_RUN rather than nothing is pinned in the SDK's own suite.
+    assert.deepEqual(
+      body.proofs.map((p: { property: string }) => p.property).sort(),
+      ['DAILY_SPEND', 'MAX_TRANSFER'],
+    );
+    for (const proof of body.proofs) {
+      assert.ok(['PROVEN', 'UNPROVEN', 'COUNTEREXAMPLE', 'NOT_RUN'].includes(proof.status), proof.status);
+    }
   });
 
   test('serves the dashboard', async () => {
@@ -165,9 +173,22 @@ describe('free read routes', () => {
     assert.equal(body.reconciled, null);
   });
 
-  test('/v1/proofs is honest about not having run', async () => {
+  test('/v1/proofs reports exactly what the artifacts say', async () => {
+    // This route is the one place a safety claim is made to a caller, so the
+    // property under test is not "it says PROVEN" or "it says NOT_RUN" — either
+    // is correct depending on whether anyone has run the verifier in this
+    // checkout. It is that the summary line agrees with the per-property
+    // statuses, and that nothing reports PROVEN without an artifact behind it.
     const body = await (await fetch(`${base}/v1/proofs`)).json();
-    assert.equal(body.allProven, false);
+
+    assert.ok(Array.isArray(body.proofs) && body.proofs.length > 0, 'the expected properties must be listed');
+    for (const proof of body.proofs) {
+      assert.ok(['PROVEN', 'UNPROVEN', 'COUNTEREXAMPLE', 'NOT_RUN'].includes(proof.status), proof.status);
+      assert.equal(typeof proof.property, 'string');
+    }
+
+    const everyProven = body.proofs.every((proof: { status: string }) => proof.status === 'PROVEN');
+    assert.equal(body.allProven, everyProven, 'allProven must not overstate the per-property statuses');
   });
 
   test('/v1/policy returns the document and its hash', async () => {
