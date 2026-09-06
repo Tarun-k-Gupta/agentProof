@@ -1,0 +1,26 @@
+{
+  "version": "agentproof/v1",
+  "agent": "trader.agentproof.eth",
+  "chainId": 11155111,
+  "asset": {
+    "address": "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238",
+    "decimals": 6
+  },
+  "policies": {
+    "maxTransaction": "100",
+    "dailySpend": "500",
+    "approvalThreshold": "100",
+    "minBalance": "10",
+    "allowedContracts": [
+      "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad",
+      "0xe03a1074c86cfedd5c142c4f04f1a1536e203543"
+    ],
+    "allowedRecipients": [
+      "0x00000000000000000000000000000000000000a1"
+    ]
+  },
+  "enforcement": {
+    "hook": "0x0000000000000000000000000000000000000000",
+    "account": "0x00000000000000000000000000000000000000a1"
+  }
+}

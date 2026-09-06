@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentProof</title>
+<style>
+  /* The brief pins this: minimal white, #0D9488 teal, split pane. The one place
+     the design spends anything is the enforcement column — the decision chips
+     and the daily gauge — because that is the thing the viewer is meant to
+     watch. The left column is deliberately quiet: it is what the agent thinks,
+     and the whole argument is that what the agent thinks is not what decides. */
+  :root {
+    --teal: #0d9488;
+    --teal-dim: #ccfbf1;
+    --ink: #18201f;
+    --muted: #6b7a78;
+    --line: #e4e9e8;
+    --block: #b91c1c;
+    --hold: #b45309;
+    --bg: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    padding: 20px 28px; border-bottom: 1px solid var(--line);
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 620; letter-spacing: -0.01em; }
+  header .claim { color: var(--muted); font-size: 14px; }
+  header .agent {
+    margin-left: auto; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12.5px; color: var(--teal);
+  }
+  main { display: grid; grid-template-columns: 1fr 1.25fr; min-height: calc(100vh - 130px); }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  section { padding: 20px 28px; }
+  section + section { border-left: 1px solid var(--line); }
+  @media (max-width: 900px) { section + section { border-left: 0; border-top: 1px solid var(--line); } }
+  h2 { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 0 0 16px; }
+
+  .thought { border-left: 2px solid var(--line); padding: 2px 0 2px 14px; margin-bottom: 18px; }
+  .thought p { margin: 0 0 6px; }
+  .thought .meta { color: var(--muted); font-size: 12.5px; }
+
+  .decision { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+  .decision.allow { border-left: 3px solid var(--teal); }
+  .decision.block { border-left: 3px solid var(--block); }
+  .decision.approval { border-left: 3px solid var(--hold); }
+
+  .chip {
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    font-size: 11.5px; font-weight: 640; letter-spacing: 0.02em;
+  }
+  .chip.allow { background: var(--teal-dim); color: #115e56; }
+  .chip.block { background: #fee2e2; color: #991b1b; }
+  .chip.approval { background: #fef3c7; color: #92400e; }
+
+  .summary { margin: 8px 0 10px; font-weight: 520; }
+  .reason { color: var(--muted); font-size: 13.5px; margin-bottom: 10px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td { padding: 5px 0; border-top: 1px solid var(--line); vertical-align: top; }
+  td.name { color: var(--muted); width: 42%; }
+  td.verdict { text-align: right; font-variant-numeric: tabular-nums; }
+  .pass { color: var(--teal); }
+  .fail { color: var(--block); }
+
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+  .prov {
+    font-size: 10.5px; padding: 1px 5px; border-radius: 3px;
+    background: #f1f5f4; color: var(--muted); margin-left: 6px;
+  }
+
+  .gauge-wrap { position: sticky; bottom: 0; background: var(--bg); padding-top: 14px; }
+  .gauge { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .gauge > div { height: 100%; background: var(--teal); transition: width .4s ease; }
+  .gauge-labels {
+    display: flex; justify-content: space-between; font-size: 12.5px;
+    color: var(--muted); margin-bottom: 6px;
+  }
+
+  .proof { margin-top: 10px; font-size: 12.5px; }
+  .proof .status { font-weight: 620; }
+  .proof .PROVEN { color: var(--teal); }
+  .proof .NOT_RUN, .proof .UNPROVEN { color: var(--hold); }
+  .proof .COUNTEREXAMPLE { color: var(--block); }
+
+  footer { padding: 14px 28px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }
+  .empty { color: var(--muted); font-size: 13.5px; }
+  a { color: var(--teal); }
+</style>
+</head>
+<body>
+  <header>
+    <h1>AgentProof</h1>
+    <span class="claim">Trust the agent to decide. Don't trust it to enforce its own limits.</span>
+    <span class="agent" id="agent">connecting…</span>
+  </header>
+
+  <main>
+    <section>
+      <h2>What the agent is thinking</h2>
+      <div id="reasoning"><p class="empty">Waiting for the agent to propose something.</p></div>
+    </section>
+
+    <section>
+      <h2>What AgentProof did about it</h2>
+      <div id="decisions"><p class="empty">No decisions yet.</p></div>
+
+      <div class="gauge-wrap">
+        <div class="gauge-labels">
+          <span>Spent today</span>
+          <span id="gauge-text">—</span>
+        </div>
+        <div class="gauge"><div id="gauge-bar" style="width:0%"></div></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    This view is read-only. It never makes a decision, and closing it changes nothing —
+    the policy engine runs in the agent's process and the hook runs on the account.
+  </footer>
+
+<script type="module">
+/**
+ * The dashboard reads. It does not decide.
+ *
+ * Every number here comes from the API's free read routes. There is no path
+ * from this page into a policy outcome, which is the answer to "what happens if
+ * I close the dashboard": nothing changes.
+ */
+const usd = (base) => {
+  const n = BigInt(base ?? 0);
+  if (n >= (1n << 255n)) return 'an UNBOUNDED amount';
+  return `${(Number(n) / 1e6).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`;
+};
+
+const el = (id) => document.getElementById(id);
+const state = { limit: 0n, spent: 0n };
+
+function renderDecision(result) {
+  const kind = result.decision === 'ALLOW' ? 'allow' : result.decision === 'BLOCK' ? 'block' : 'approval';
+  const node = document.createElement('div');
+  node.className = `decision ${kind}`;
+
+  const rows = (result.policyRows ?? []).map((row) => `
+    <tr>
+      <td class="name">${row.name}</td>
+      <td class="verdict ${row.passed ? 'pass' : 'fail'}">${row.passed ? 'pass' : 'fail'}${
+        row.provenance ? `<span class="prov">${row.provenance}</span>` : ''
+      }</td>
+    </tr>`).join('');
+
+  const proof = result.proof
+    ? `<div class="proof">invariant ${result.proof.property}:
+         <span class="status ${result.proof.status}">${result.proof.status}</span>
+         <span class="mono">(${result.proof.tool}, ${result.proof.solverTimeMs} ms)</span></div>`
+    : '';
+
+  node.innerHTML = `
+    <span class="chip ${kind}">${result.decision}</span>
+    <div class="summary">${result.intent?.summary ?? ''}</div>
+    <div class="reason">${result.reason ?? ''}</div>
+    ${rows ? `<table>${rows}</table>` : ''}
+    ${proof}
+    ${result.txHash ? `<div class="proof mono">tx ${result.txHash}</div>` : ''}`;
+
+  const container = el('decisions');
+  if (container.querySelector('.empty')) container.innerHTML = '';
+  container.prepend(node);
+}
+
+function renderThought(entry) {
+  const node = document.createElement('div');
+  node.className = 'thought';
+  node.innerHTML = `<p>${entry.reasoning}</p><p class="meta">${entry.proposal ?? ''}</p>`;
+  const container = el('reasoning');
+  if (container.querySelector('.empty')) container.innerHTML = '';
+  container.prepend(node);
+}
+
+function renderGauge() {
+  const pct = state.limit > 0n ? Number((state.spent * 100n) / state.limit) : 0;
+  el('gauge-bar').style.width = `${Math.min(pct, 100)}%`;
+  el('gauge-text').textContent = `${usd(state.spent)} of ${usd(state.limit)}`;
+}
+
+async function boot() {
+  try {
+    const health = await (await fetch('/health')).json();
+    el('agent').textContent = health.agent ?? 'unknown agent';
+
+    const spend = await (await fetch(`/v1/spend/${health.account ?? ''}`)).json().catch(() => null);
+    if (spend) {
+      state.limit = BigInt(spend.limit ?? 0);
+      state.spent = BigInt(spend.spentGraph ?? 0);
+      renderGauge();
+    }
+  } catch {
+    el('agent').textContent = 'API unreachable';
+  }
+
+  // Live decisions arrive over SSE. The stream carries results only; there is
+  // no channel back.
+  try {
+    const stream = new EventSource('/v1/stream');
+    stream.addEventListener('decision', (event) => {
+      const payload = JSON.parse(event.data);
+      renderDecision(payload);
+      if (payload.decision === 'ALLOW' && payload.intent) {
+        state.spent += BigInt(payload.intent.notionalUSDC ?? 0);
+        renderGauge();
+      }
+    });
+    stream.addEventListener('thought', (event) => renderThought(JSON.parse(event.data)));
+  } catch {
+    /* no stream configured; the static view above is still correct */
+  }
+}
+
+boot();
+</script>
+</body>
+</html>

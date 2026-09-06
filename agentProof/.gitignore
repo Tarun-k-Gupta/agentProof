@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# Generated, never hand-edited. Produced by scripts/run-formal-verification.sh.
+proofs/*.json
+artifacts/
+
+contracts/out/
+contracts/cache/
+contracts/lib/
+subgraphs/*/generated/
+subgraphs/*/build/
+
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store

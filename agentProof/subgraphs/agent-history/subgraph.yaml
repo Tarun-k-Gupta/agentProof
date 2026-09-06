@@ -1,0 +1,41 @@
+specVersion: 1.0.0
+description: >
+  Historical spend for AgentProof-protected accounts. Indexes the enforcement
+  hook's own events, so the history reflects what the chain admitted rather than
+  what any agent intended.
+repository: https://github.com/agentproof/agentproof
+schema:
+  file: ./schema.graphql
+indexerHints:
+  prune: never
+dataSources:
+  - kind: ethereum
+    name: AgentPolicyHook
+    network: sepolia
+    source:
+      address: "0x0000000000000000000000000000000000000000" # from deployments/sepolia.json
+      abi: AgentPolicyHook
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/mapping.ts
+      entities:
+        - Agent
+        - PolicyInstall
+        - Execution
+        - DailyAggregate
+        - TargetPermission
+      abis:
+        - name: AgentPolicyHook
+          file: ./abis/AgentPolicyHook.json
+      eventHandlers:
+        - event: PolicyInstalled(indexed address,bytes32,address)
+          handler: handlePolicyInstalled
+        - event: SpendRecorded(indexed address,indexed address,uint256,uint256,uint64)
+          handler: handleSpendRecorded
+        - event: TargetAllowed(indexed address,indexed address,bool)
+          handler: handleTargetAllowed
+        - event: PolicyUninstalled(indexed address)
+          handler: handlePolicyUninstalled

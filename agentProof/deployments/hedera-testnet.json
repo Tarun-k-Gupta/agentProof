@@ -1,0 +1,11 @@
+{
+  "_comment": "Verify the facilitator's /supported endpoint returns hedera-testnet with scheme=exact before relying on any of this. The API refuses to start if it does not.",
+  "network": "hedera-testnet",
+  "facilitator": "blocky402",
+  "facilitatorUrl": "",
+  "serviceAccountId": "0.0.0",
+  "usdcTokenId": "",
+  "hcsAuditTopicId": "",
+  "verificationServiceUrl": "",
+  "pricing": { "verifyUsdc": "0.01", "decodeUsdc": "0.005" }
+}

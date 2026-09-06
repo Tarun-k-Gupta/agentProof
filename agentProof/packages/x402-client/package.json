@@ -1,0 +1,11 @@
+{
+  "name": "@agentproof/x402-client",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": { "typecheck": "tsc --project tsconfig.json" },
+  "dependencies": { "@agentproof/sdk": "workspace:*" },
+  "optionalDependencies": { "@hashgraph/sdk": "^2.62.0" },
+  "devDependencies": { "typescript": "^5.7.2" }
+}

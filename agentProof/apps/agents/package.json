@@ -1,0 +1,20 @@
+{
+  "name": "@agentproof/agents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "trader": "tsx trader/run.ts",
+    "researcher": "tsx researcher/run.ts",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@agentproof/sdk": "workspace:*",
+    "@agentproof/x402-client": "workspace:*"
+  },
+  "optionalDependencies": {
+    "@langchain/langgraph": "^0.2.39",
+    "@langchain/openai": "^0.3.14"
+  },
+  "devDependencies": { "typescript": "^5.7.2" }
+}

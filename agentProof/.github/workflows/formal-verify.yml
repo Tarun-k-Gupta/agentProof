@@ -1,0 +1,53 @@
+name: Formal verification
+
+on:
+  push: { branches: [main] }
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smtchecker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+
+      - name: Install solc and z3
+        run: |
+          pip install solc-select z3-solver
+          solc-select install 0.8.28
+          solc-select use 0.8.28
+
+      - name: Run SMTChecker
+        run: bash scripts/run-formal-verification.sh
+
+      # Two failure modes are guarded here, not one:
+      #   1. the real properties stop verifying
+      #   2. the broken control starts verifying, meaning the checker is inert
+      # The second is the one that quietly turns a proof into decoration.
+      - name: MAX_TRANSFER must not regress
+        run: |
+          status=$(node -p "require('./proofs/MAX_TRANSFER.json').status")
+          echo "MAX_TRANSFER: $status"
+          [ "$status" = "PROVEN" ] || { echo "::error::MAX_TRANSFER regressed to $status"; exit 1; }
+
+      - name: The broken control must still produce a counterexample
+        run: |
+          node -e "
+            const s = require('./proofs/summary.json');
+            if (!s.negativeControl.counterexampleProduced) {
+              console.error('The deliberately broken spec verified cleanly — the checker is not running.');
+              process.exit(1);
+            }
+            console.log('negative control OK');
+          "
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proofs
+          path: |
+            proofs/
+            artifacts/smt/

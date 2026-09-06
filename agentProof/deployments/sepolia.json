@@ -1,0 +1,16 @@
+{
+  "_comment": "Written by contracts/script/Deploy.s.sol. Single source of truth for addresses — read by the SDK, the API and the dashboard. Values below are placeholders until the first deploy.",
+  "chainId": 11155111,
+  "network": "sepolia",
+  "agentPolicyHook": "0x0000000000000000000000000000000000000000",
+  "smartAccount": "0x0000000000000000000000000000000000000000",
+  "accountImplementation": {
+    "_comment": "Pin this. Read its HookManager and confirm the preCheck/postCheck signatures before installing.",
+    "name": "",
+    "version": "",
+    "address": "0x0000000000000000000000000000000000000000"
+  },
+  "usdc": "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238",
+  "uniswapUniversalRouter": "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad",
+  "deployedAtBlock": 0
+}

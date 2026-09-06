@@ -1,0 +1,193 @@
+openapi: 3.1.0
+info:
+  title: AgentProof Verification API
+  version: 0.1.0
+  license: { name: MIT }
+  description: |
+    Policy evaluation for autonomous agents, over HTTP.
+
+    This is a second product surface, not a second product: every route is a thin
+    wrapper over the same PolicyEngine the SDK uses, so there is exactly one
+    implementation of every decision.
+
+    IMPORTANT — how to read this API. It is **advisory**. It never signs, never
+    holds keys, and never executes. An HTTP "is this action safe?" endpoint is,
+    on its own, exactly the bypassable application-level guardrail AgentProof
+    argues against. It exists for agents that cannot embed the SDK. The
+    enforcement boundary is the ERC-7579 hook installed on the account.
+
+servers:
+  - url: https://verify.agentproof.dev
+  - url: http://localhost:8402
+
+paths:
+  /v1/verify:
+    post:
+      summary: Full policy decision for a proposed action
+      description: |
+        x402-gated. An unpaid request returns 402 with payment requirements.
+        Payment is verified before the work and settled after it, so a caller is
+        never charged for a request that failed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyRequest' }
+      responses:
+        '200':
+          description: Decision
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyResult' }
+        '402':
+          description: Payment required
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentChallenge' }
+        '400': { description: Malformed action }
+
+  /v1/decode:
+    post:
+      summary: Calldata to normalized intent, with worst-case outflow
+      description: x402-gated. Stateless — no policy state is read.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Action' }
+      responses:
+        '200':
+          description: Normalized intent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  intent: { $ref: '#/components/schemas/NormalizedIntent' }
+        '402': { description: Payment required }
+
+  /v1/policy/{ensName}:
+    get:
+      summary: Live policy document and hash, resolved through ENSv2
+      parameters:
+        - { name: ensName, in: path, required: true, schema: { type: string }, example: trader.agentproof.eth }
+      responses:
+        '200': { description: Policy document and policyHash }
+
+  /v1/spend/{account}:
+    get:
+      summary: Today's spend, reconciled between the subgraph and the chain
+      parameters:
+        - { name: account, in: path, required: true, schema: { type: string, pattern: '^0x[0-9a-fA-F]{40}$' } }
+      responses:
+        '200':
+          description: Reconciliation view
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account: { type: string }
+                  dayUtc: { type: integer }
+                  spentGraph: { type: string, description: base units, from the subgraph }
+                  spentOnchain: { type: [string, 'null'], description: base units, from the hook accumulator }
+                  reconciled: { type: [boolean, 'null'], description: false means the SDK used whichever source permits less }
+                  limit: { type: string }
+                  remaining: { type: string }
+
+  /v1/proofs:
+    get:
+      summary: Current formal-verification artifacts
+      description: Returns NOT_RUN when no artifacts exist. Never reports a proof that was not produced.
+      responses:
+        '200': { description: Proof references }
+
+  /health:
+    get:
+      summary: Liveness, policy hash and proof status
+      responses:
+        '200': { description: OK }
+
+components:
+  schemas:
+    Action:
+      type: object
+      required: [to]
+      properties:
+        to: { type: string, pattern: '^0x[0-9a-fA-F]{40}$' }
+        data: { type: string, pattern: '^0x[0-9a-fA-F]*$', default: '0x' }
+        value: { type: string, description: native wei ONLY, never a token amount, default: '0' }
+        chainId: { type: integer, default: 11155111 }
+
+    VerifyRequest:
+      type: object
+      required: [action]
+      properties:
+        agent: { type: string, example: trader.agentproof.eth }
+        action: { $ref: '#/components/schemas/Action' }
+
+    NormalizedIntent:
+      type: object
+      properties:
+        kind: { type: string, enum: [TRANSFER, APPROVE, SWAP, X402_PAYMENT, NATIVE_TRANSFER, UNKNOWN] }
+        target: { type: string }
+        selector: { type: string }
+        counterparty: { type: string }
+        notionalUSDC: { type: string, description: 6-decimal base units; the figure every policy compares against }
+        summary: { type: string, description: human-readable, safe for a hardware wallet screen }
+        outflow:
+          type: array
+          items:
+            type: object
+            properties:
+              asset: { type: string }
+              amount: { type: string }
+              provenance:
+                type: string
+                enum: [DECLARED, DECODED, MEASURED]
+                description: DECLARED is never trusted for a decision.
+
+    PolicyResult:
+      type: object
+      properties:
+        decision: { type: string, enum: [ALLOW, BLOCK, REQUIRE_APPROVAL] }
+        reason: { type: string }
+        violations:
+          type: array
+          items:
+            type: object
+            properties:
+              policy: { type: string }
+              limit: { type: string }
+              observed: { type: string }
+              provenance: { type: string }
+        intent: { $ref: '#/components/schemas/NormalizedIntent' }
+        proof:
+          type: object
+          properties:
+            property: { type: string, enum: [MAX_TRANSFER, DAILY_SPEND] }
+            status: { type: string, enum: [PROVEN, UNPROVEN, COUNTEREXAMPLE, NOT_RUN] }
+        enforcement:
+          type: object
+          description: Restated on every response so this endpoint cannot be mistaken for the boundary.
+          properties:
+            advisory: { type: boolean, const: true }
+            hook: { type: string }
+            account: { type: string }
+
+    PaymentChallenge:
+      type: object
+      properties:
+        x402Version: { type: integer, const: 1 }
+        error: { type: string }
+        accepts:
+          type: array
+          items:
+            type: object
+            properties:
+              scheme: { type: string, const: exact }
+              network: { type: string, example: hedera-testnet }
+              asset: { type: string }
+              amount: { type: string }
+              payTo: { type: string }
+              facilitator: { type: string, const: blocky402 }

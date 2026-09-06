@@ -1,0 +1,51 @@
+{
+  "name": "@agentproof/sdk",
+  "version": "0.1.0",
+  "description": "Verifiable safety runtime for autonomous agents: policy evaluation off-chain, enforcement at the wallet boundary.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./decode/uniswap": {
+      "types": "./dist/decode/uniswapV4.d.ts",
+      "import": "./dist/decode/uniswapV4.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/SimulatedAccount.d.ts",
+      "import": "./dist/testing/SimulatedAccount.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "keywords": [
+    "ai-agents",
+    "erc-7579",
+    "account-abstraction",
+    "formal-verification",
+    "policy",
+    "safety"
+  ],
+  "scripts": {
+    "test": "tsx --test tests/unit/*.test.ts",
+    "typecheck": "tsc --project tsconfig.json",
+    "build": "tsc --project tsconfig.build.json"
+  },
+  "dependencies": {},
+  "peerDependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.1",
+    "tsx": "^4.19.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

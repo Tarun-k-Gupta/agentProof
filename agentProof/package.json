@@ -1,0 +1,26 @@
+{
+  "name": "agentproof",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.12.0",
+  "engines": { "node": ">=22.6.0" },
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "test:sdk": "pnpm --filter @agentproof/sdk test",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "demo": "tsx scripts/demo-runner.ts",
+    "api": "tsx packages/api/src/index.ts",
+    "verify:formal": "bash scripts/run-formal-verification.sh",
+    "contracts:test": "forge test --root contracts -vv",
+    "contracts:invariant": "FOUNDRY_PROFILE=deep forge test --root contracts --match-path 'test/invariant/*' -vv",
+    "subgraph:codegen": "graph codegen subgraphs/agent-history/subgraph.yaml",
+    "subgraph:deploy": "graph deploy --studio agentproof-agent-history subgraphs/agent-history/subgraph.yaml"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  }
+}

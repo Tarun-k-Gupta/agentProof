@@ -1,0 +1,64 @@
+"An agent's protected smart account."
+type Agent @entity {
+  id: ID! # account address
+  policyHash: Bytes!
+  hook: Bytes!
+  asset: Bytes!
+  installedAt: BigInt!
+  allowedTargets: [Bytes!]!
+  totalOutflow: BigInt!
+  executionCount: Int!
+  executions: [Execution!]! @derivedFrom(field: "agent")
+  dailyAggregates: [DailyAggregate!]! @derivedFrom(field: "agent")
+}
+
+"One PolicyInstalled event: which policy an account is running under, and since when."
+type PolicyInstall @entity(immutable: true) {
+  id: ID!
+  account: Bytes!
+  policyHash: Bytes!
+  asset: Bytes!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+"One SpendRecorded event: a MEASURED outflow the hook actually admitted."
+type Execution @entity(immutable: true) {
+  id: ID!
+  agent: Agent!
+  account: Bytes!
+  target: Bytes!
+  "Balance delta measured by the hook. Never a declared amount."
+  outflow: BigInt!
+  dayTotal: BigInt!
+  day: Int!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+"""
+The entity the daily-spend policy actually reads. Pre-aggregating here rather
+than summing Executions at query time is what keeps the policy decision fast
+enough to sit in an agent's hot path.
+"""
+type DailyAggregate @entity {
+  id: ID! # account-day
+  agent: Agent!
+  account: Bytes!
+  day: Int!
+  totalOutflow: BigInt!
+  executionCount: Int!
+  largestOutflow: BigInt!
+  lastUpdatedBlock: BigInt!
+}
+
+"Allowlist changes, so an auditor can reconstruct what a target was permitted when."
+type TargetPermission @entity {
+  id: ID!
+  account: Bytes!
+  target: Bytes!
+  allowed: Boolean!
+  updatedAt: BigInt!
+}
