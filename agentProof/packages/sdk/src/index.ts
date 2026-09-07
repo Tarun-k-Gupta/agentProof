@@ -24,6 +24,7 @@ export {
   AllowlistPolicy,
   MinBalancePolicy,
   ApprovalThresholdPolicy,
+  PoolLiquidityPolicy,
 } from './policies/index.ts';
 
 export {
@@ -39,8 +40,12 @@ export {
 export { ENSIdentity, ENS_KEY_POLICY, ENS_KEY_HOOK, ENS_KEY_STATUS, namehash, dnsEncode } from './identity/ENSIdentity.ts';
 export { MemoryStateProvider } from './state/MemoryStateProvider.ts';
 export { GraphStateProvider, StateUnavailableError } from './state/GraphStateProvider.ts';
+export { UniswapPoolProvider } from './state/UniswapPoolProvider.ts';
+export type { PoolState, UniswapPoolProviderOptions } from './state/UniswapPoolProvider.ts';
 export { ConsoleApprover, DashboardApprover, LedgerApprover } from './approval/index.ts';
 export type { LedgerTransport } from './approval/index.ts';
+export { selectApprover, createLedgerTransport, LedgerUnavailableError } from './approval/ledger.ts';
+export type { LedgerOptions } from './approval/ledger.ts';
 export { ProofRegistry } from './proofs/ProofRegistry.ts';
 export { HookEnforcer, PolicyBindingError } from './enforcement/HookEnforcer.ts';
 export { ConsoleLogger, silentLogger } from './utils/logger.ts';

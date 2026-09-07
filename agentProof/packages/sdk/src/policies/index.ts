@@ -204,3 +204,66 @@ export class ApprovalThresholdPolicy implements Policy {
     };
   }
 }
+
+/**
+ * P7 — Pool plausibility (cross-protocol).
+ *
+ * Reads the deepest pool for the pair from a public Uniswap subgraph and
+ * refuses a swap against one too thin to trade in. This is the second Graph
+ * product in the integration: our own subgraph says how much the agent has
+ * spent, this one says whether the venue is real.
+ *
+ * It is not a price or slippage control — those are out of scope per the threat
+ * model. It bounds a different failure: the spend limits stop an agent losing
+ * more than 100 USDC in a transaction, and do nothing at all about that 100
+ * USDC buying dust in a pool with 40 dollars in it.
+ *
+ * Advisory-only by construction: there is no on-chain counterpart, so this
+ * cannot be enforced by the hook and is not claimed to be.
+ */
+export class PoolLiquidityPolicy implements Policy {
+  readonly id = 'poolLiquidity';
+  readonly formallyVerified = false;
+
+  constructor(private readonly minTvlUsd: number) {}
+
+  evaluate(intent: NormalizedIntent, state?: PolicyState): PolicyEvaluation {
+    // Only swaps route through a pool; a transfer has no venue to check.
+    if (intent.kind !== 'SWAP') return pass;
+
+    // Not fetched, or the subgraph was unreachable. The engine reports this
+    // policy as unevaluated rather than passing it silently.
+    if (state?.pool === undefined) return pass;
+
+    if (state.pool === null) {
+      return {
+        decision: 'BLOCK',
+        reason: 'no Uniswap pool is indexed for this pair, so the swap has no venue we can verify',
+        violation: {
+          policy: this.id,
+          limit: BigInt(Math.round(this.minTvlUsd)),
+          observed: 0n,
+          provenance: 'DECODED',
+          message: 'no indexed pool',
+        },
+      };
+    }
+
+    const tvl = state.pool.totalValueLockedUSD;
+    if (tvl >= this.minTvlUsd) return pass;
+
+    return {
+      decision: 'BLOCK',
+      reason:
+        `the deepest pool for this pair holds about $${Math.round(tvl).toLocaleString('en-US')}, ` +
+        `under the $${this.minTvlUsd.toLocaleString('en-US')} floor — too thin to trade into`,
+      violation: {
+        policy: this.id,
+        limit: BigInt(Math.round(this.minTvlUsd)),
+        observed: BigInt(Math.round(tvl)),
+        provenance: 'DECODED',
+        message: 'pool liquidity below the configured floor',
+      },
+    };
+  }
+}

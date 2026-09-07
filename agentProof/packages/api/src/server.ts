@@ -19,6 +19,8 @@ import {
   DailySpendPolicy,
   MaxTransactionPolicy,
   MinBalancePolicy,
+  PoolLiquidityPolicy,
+  UniswapPoolProvider,
   type PolicyDocument,
   type PolicyResult,
   toPublicAuditRecord,
@@ -75,6 +77,8 @@ export interface ServerOptions {
   hedera?: { accountId: string; privateKey: string; topicId: string; network: 'testnet' | 'mainnet' };
   chain?: { rpcUrl: string; chainId: number; universalResolver?: string };
   graph?: { endpoint: string; apiKey: string };
+  /** public Uniswap subgraph, for the cross-protocol pool-plausibility read */
+  uniswapGraph?: { endpoint: string; apiKey?: string; minTvlUsd?: number };
   mode?: 'simulation' | 'production';
   adminToken?: string;
   /** Test seams. Production supplies neither; both are constructed from config. */
@@ -106,6 +110,18 @@ export async function createApiServer(options: ServerOptions) {
         })
       : new MemoryStateProvider();
 
+  // Second Graph product: our own subgraph says how much has been spent, this
+  // one says whether the venue a swap routes through is real.
+  const pools = options.uniswapGraph
+    ? new UniswapPoolProvider({
+        endpoint: options.uniswapGraph.endpoint,
+        apiKey: options.uniswapGraph.apiKey,
+        http: fetchHttpClient,
+        logger,
+      })
+    : undefined;
+  const minTvlUsd = options.uniswapGraph?.minTvlUsd ?? 50_000;
+
   const engine = new PolicyEngine({
     decoders: createDefaultRegistry(),
     decoderContext: { account: policy.account, trackedAsset: policy.asset, decimals: policy.decimals },
@@ -119,6 +135,7 @@ export async function createApiServer(options: ServerOptions) {
       new MaxTransactionPolicy(policy.maxTransaction),
       ...(canReadBalances || mode === 'production' ? [new MinBalancePolicy(policy.minBalance)] : []),
       new DailySpendPolicy(policy.dailySpend),
+      ...(pools ? [new PoolLiquidityPolicy(minTvlUsd)] : []),
       new ApprovalThresholdPolicy(policy.approvalThreshold),
     ],
   });
@@ -134,10 +151,37 @@ export async function createApiServer(options: ServerOptions) {
     state,
     proofs,
     mode: canReadBalances || mode === 'production' ? mode : 'simulation',
-    unevaluatedPolicies: canReadBalances || mode === 'production'
-      ? []
-      : [{ policy: 'minBalance', reason: 'simulation mode has no RPC, so the account balance cannot be read' }],
+    unevaluatedPolicies: [
+      ...(canReadBalances || mode === 'production'
+        ? []
+        : [{ policy: 'minBalance', reason: 'simulation mode has no RPC, so the account balance cannot be read' }]),
+      ...(pools
+        ? []
+        : [{ policy: 'poolLiquidity', reason: 'no UNISWAP_SUBGRAPH_ENDPOINT is configured, so pool depth is unknown' }]),
+    ],
   };
+
+  if (pools) {
+    context.poolFor = async (intent) => {
+      // Only a swap has a venue, and we need both sides of the pair. The
+      // tracked asset is one side; the counterparty of a router call is the
+      // router, so the other side comes from the non-tracked outflow leg.
+      if (intent.kind !== 'SWAP') return undefined;
+      const other = intent.outflow.find((flow) => flow.asset.toLowerCase() !== policy.asset.toLowerCase());
+      const pair = other?.asset ?? intent.counterparty;
+      if (!pair) return undefined;
+
+      try {
+        return await pools.deepestPool(policy.asset, pair as `0x${string}`);
+      } catch (error) {
+        // Unreachable is not "no pool". Returning undefined leaves the policy
+        // unevaluated and says so in the response, rather than blocking every
+        // swap because a public subgraph is having a bad day.
+        logger.log('warn', 'uniswap subgraph unreachable', { error: String(error) });
+        return undefined;
+      }
+    };
+  }
 
   // Live chain reads. Optional: without an RPC the API still answers, and the
   // reconciliation view reports null rather than inventing a number.
@@ -438,6 +482,13 @@ export async function createApiServerFromEnv(policy: PolicyDocument, env = proce
     mode: config.mode,
     adminToken: config.adminToken,
     graph: config.graph,
+    uniswapGraph: env.UNISWAP_SUBGRAPH_ENDPOINT
+      ? {
+          endpoint: env.UNISWAP_SUBGRAPH_ENDPOINT,
+          apiKey: env.GRAPH_API_KEY,
+          minTvlUsd: Number(env.UNISWAP_MIN_POOL_TVL_USD ?? 50_000),
+        }
+      : undefined,
     x402: {
       enabled: env.X402_ENABLED === 'true',
       facilitatorUrl: env.X402_FACILITATOR_URL ?? 'https://facilitator.blocky402.io',

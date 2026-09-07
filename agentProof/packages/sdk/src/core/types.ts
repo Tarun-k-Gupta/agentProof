@@ -141,6 +141,20 @@ export interface PolicyState {
   balance: bigint;
   asset: Address;
   now: number;
+  /**
+   * Pool state for the pair a swap would trade against, pre-fetched from a
+   * public Uniswap subgraph.
+   *
+   * Three-valued on purpose, and the distinction is load-bearing:
+   *   PoolState   the subgraph answered and this is the deepest pool
+   *   null        the subgraph answered and knows of no pool for the pair
+   *   undefined   we did not ask, or could not
+   *
+   * Policies evaluate on the first two and report themselves unevaluated on the
+   * third. Collapsing "no pool exists" into "we could not check" would turn an
+   * outage into a verdict.
+   */
+  pool?: import('../state/UniswapPoolProvider.ts').PoolState | null;
 }
 
 export interface Policy {

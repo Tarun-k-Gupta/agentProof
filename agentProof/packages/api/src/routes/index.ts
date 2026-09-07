@@ -23,6 +23,13 @@ export interface RouteContext {
   resolvePolicyByName?: (name: string) => Promise<unknown>;
   /** reads the hook's accumulator directly, for the reconciliation view */
   readOnchainSpend?: (account: string) => Promise<bigint | undefined>;
+  /**
+   * Pool state for a swap's pair, from a public Uniswap subgraph.
+   * Absent when no UNISWAP_SUBGRAPH_ENDPOINT is configured.
+   */
+  poolFor?: (intent: import('@agentproof/sdk').NormalizedIntent) => Promise<
+    import('@agentproof/sdk').PoolState | null | undefined
+  >;
 }
 
 /**
@@ -54,6 +61,11 @@ export async function verifyRoute(
     ctx.state.getBalance(ctx.policy.account, ctx.policy.asset),
   ]);
 
+  // The pool read needs a decoded intent, so it happens between decode and
+  // evaluate rather than alongside the state reads above.
+  const intent = ctx.engine.decode(action);
+  const pool = ctx.poolFor ? await ctx.poolFor(intent) : undefined;
+
   const result = ctx.engine.verify(action, {
     account: ctx.policy.account,
     dayUtc,
@@ -61,6 +73,7 @@ export async function verifyRoute(
     balance,
     asset: ctx.policy.asset,
     now: Date.now(),
+    pool,
   });
 
   const wire = {
