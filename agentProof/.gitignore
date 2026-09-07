@@ -25,3 +25,7 @@ subgraphs/*/build/
 # written by hand.
 !artifacts/smt/*.log
 .DS_Store
+
+# Next.js build output
+.next/
+next-env.d.ts
