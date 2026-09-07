@@ -11,6 +11,11 @@ import { api } from '@/lib/api';
  * the only irreversible action on the page, and a token sitting in
  * localStorage is one XSS away from being someone else's.
  */
+/** Catches the commonest paste mistake: the command instead of the value. */
+function looksLikeACommand(value: string): boolean {
+  return /\s/.test(value.trim()) || value.includes('=') || value.includes('pnpm');
+}
+
 export function LoginGate({ onSuccess }: { onSuccess: () => void }) {
   const [token, setToken] = useState('');
   const [error, setError] = useState<string>();
@@ -20,13 +25,25 @@ export function LoginGate({ onSuccess }: { onSuccess: () => void }) {
     event.preventDefault();
     setBusy(true);
     setError(undefined);
-    const result = await api.login(token);
+    // Trimmed before it is sent. A pasted token picks up a trailing newline or
+    // space more often than not, and "that token was not accepted" is a
+    // maddening thing to read when the token is in fact correct.
+    const result = await api.login(token.trim());
     setBusy(false);
     if (result.ok) {
       setToken('');
       onSuccess();
     } else {
-      setError(result.status === 401 ? 'That token was not accepted.' : result.error);
+      setError(
+        result.status === 401
+          ? looksLikeACommand(token)
+            ? 'That looks like a shell command, not the token. Paste only the value of ' +
+              'AGENTPROOF_ADMIN_TOKEN — for a server started with ' +
+              '`AGENTPROOF_ADMIN_TOKEN=abc123 pnpm api`, the token is `abc123`.'
+            : 'That token was not accepted. It is the value AGENTPROOF_ADMIN_TOKEN was set to ' +
+              'when the API started.'
+          : result.error,
+      );
     }
   };
 
@@ -42,7 +59,8 @@ export function LoginGate({ onSuccess }: { onSuccess: () => void }) {
           id="token"
           type="password"
           value={token}
-          autoComplete="current-password"
+          autoComplete="off"
+          spellCheck={false}
           onChange={(event) => setToken(event.target.value)}
           placeholder="AGENTPROOF_ADMIN_TOKEN"
           required
@@ -54,7 +72,7 @@ export function LoginGate({ onSuccess }: { onSuccess: () => void }) {
           </p>
         ) : null}
 
-        <button type="submit" disabled={busy || token.length === 0}>
+        <button type="submit" disabled={busy || token.trim().length === 0}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
 
