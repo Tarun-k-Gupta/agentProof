@@ -1,0 +1,7 @@
+{
+  "property": "MAX_TRANSFER",
+  "status": "PROVEN",
+  "tool": "solc-smtchecker",
+  "solverTimeMs": 1348,
+  "artifactPath": "proofs/MAX_TRANSFER.json"
+}

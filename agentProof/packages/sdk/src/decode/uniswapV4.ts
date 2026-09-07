@@ -1,3 +1,4 @@
+import { NATIVE_ASSET } from '../core/types.ts';
 import type { Action, Address, NormalizedIntent, Provenance } from '../core/types.ts';
 import { displayUsdc, UNBOUNDED } from '../utils/units.ts';
 import { normalizeAddress, selectorOf } from '../utils/hex.ts';
@@ -7,8 +8,15 @@ import type { DecoderContext, SelectorDecoder } from './registry.ts';
 export const SELECTOR_EXECUTE = '0x3593564c';
 export const SELECTOR_EXECUTE_NO_DEADLINE = '0x24856bc3';
 
-/** Currency(0) is native ETH throughout v4 and the Universal Router. */
-export const NATIVE = '0x0000000000000000000000000000000000000000' as Address;
+/**
+ * Currency(0) is native ETH throughout v4 and the Universal Router.
+ *
+ * Reported to callers as the SDK's `NATIVE_ASSET` sentinel rather than as the
+ * zero address, so one asset has one identity everywhere in an intent. v4's
+ * encoding is an implementation detail of v4.
+ */
+const V4_NATIVE_CURRENCY = '0x0000000000000000000000000000000000000000' as Address;
+export const NATIVE = NATIVE_ASSET;
 
 /**
  * Universal Router command byte layout.
@@ -159,7 +167,7 @@ export const uniswapV4Decoder: SelectorDecoder = {
           }
           case Command.WRAP_ETH: {
             // (recipient, amount) — native ETH leaves to become WETH.
-            outflow.add(NATIVE, wordAt(input, 1));
+            outflow.add(NATIVE_ASSET, wordAt(input, 1));
             break;
           }
           case Command.UNWRAP_WETH:
@@ -210,7 +218,7 @@ class Outflow {
   private readonly byAsset = new Map<Address, bigint>();
 
   add(asset: Address, amount: bigint): void {
-    const key = normalizeAddress(asset);
+    const key = canonicalAsset(asset);
     this.byAsset.set(key, (this.byAsset.get(key) ?? 0n) + amount);
   }
 
@@ -220,7 +228,7 @@ class Outflow {
    * authorising a further payment; adding it would double-count the swap.
    */
   atLeast(asset: Address, amount: bigint): void {
-    const key = normalizeAddress(asset);
+    const key = canonicalAsset(asset);
     const current = this.byAsset.get(key) ?? 0n;
     if (amount > current) this.byAsset.set(key, amount);
   }
@@ -230,7 +238,7 @@ class Outflow {
   }
 
   get(asset: Address): bigint {
-    return this.byAsset.get(normalizeAddress(asset)) ?? 0n;
+    return this.byAsset.get(canonicalAsset(asset)) ?? 0n;
   }
 
   entries(): Array<[Address, bigint]> {
@@ -238,11 +246,25 @@ class Outflow {
   }
 }
 
+/**
+ * v4's zero-address native currency, normalised to the SDK's one sentinel.
+ *
+ * `NATIVE_ASSET` is EIP-55 mixed case, so it has to be recognised after
+ * lowercasing too — otherwise a lookup keyed on the sentinel misses an entry
+ * stored under its own lowercase form.
+ */
+const NATIVE_KEYS = new Set([V4_NATIVE_CURRENCY, NATIVE_ASSET.toLowerCase()]);
+
+function canonicalAsset(asset: Address): Address {
+  const normalised = normalizeAddress(asset);
+  return NATIVE_KEYS.has(normalised.toLowerCase()) ? NATIVE_ASSET : normalised;
+}
+
 function summarise(tracked: bigint, others: Array<[Address, bigint]>): string {
   const parts: string[] = [];
   if (tracked > 0n) parts.push(`up to ${displayUsdc(tracked)}`);
   for (const [asset, amount] of others) {
-    parts.push(`up to ${amount} base units of ${asset === NATIVE ? 'native ETH' : asset}`);
+    parts.push(`up to ${amount} base units of ${asset === NATIVE_ASSET ? 'native ETH' : asset}`);
   }
   if (parts.length === 0) return 'Router call with no outflow from this account';
   return `Swap ${parts.join(' and ')} via Universal Router`;

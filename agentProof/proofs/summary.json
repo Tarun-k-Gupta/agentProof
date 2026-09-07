@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-09-06T23:17:59.082Z",
+  "solverTimeMs": 1348,
+  "properties": [
+    {
+      "property": "MAX_TRANSFER",
+      "status": "PROVEN",
+      "tool": "solc-smtchecker",
+      "solverTimeMs": 1348,
+      "artifactPath": "proofs/MAX_TRANSFER.json"
+    },
+    {
+      "property": "DAILY_SPEND",
+      "status": "PROVEN",
+      "tool": "solc-smtchecker",
+      "solverTimeMs": 1348,
+      "artifactPath": "proofs/DAILY_SPEND.json"
+    }
+  ],
+  "negativeControl": {
+    "contract": "PolicySpecBroken",
+    "counterexampleProduced": true,
+    "counterexample": "w = {day: 0, spent: 115792089237316195423570985008687907853269984665640564039457584007913129639934}, maxTransaction = 115792089237316195423570985008687907853269984665640564039457584007913129639934, dailyLimit = 115792089237316195423570985008687907853269984665640564039457584007913129639934\namount = 2\ntoday = 0\nbase = 115792089237316195423570985008687907853269984665640564039457584007913129639934\nwouldBe = 0"
+  },
+  "allProven": true
+}

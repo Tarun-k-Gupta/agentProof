@@ -1,0 +1,7 @@
+{
+  "property": "DAILY_SPEND",
+  "status": "PROVEN",
+  "tool": "solc-smtchecker",
+  "solverTimeMs": 1348,
+  "artifactPath": "proofs/DAILY_SPEND.json"
+}
