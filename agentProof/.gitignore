@@ -20,4 +20,8 @@ subgraphs/*/build/
 .env.*
 !.env.example
 *.log
+# …except the solver transcripts, which PRD 18.1 requires alongside proofs/.
+# They are the evidence that the PROVEN statuses were produced by a run and not
+# written by hand.
+!artifacts/smt/*.log
 .DS_Store
