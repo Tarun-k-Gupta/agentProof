@@ -21,7 +21,9 @@
     "subgraph:deploy": "graph deploy --studio agentproof-agent-history subgraphs/agent-history/subgraph.yaml",
     "verify:deployment": "tsx scripts/verify-deployment.ts",
     "capture:uniswap-fixtures": "tsx scripts/capture-uniswap-fixtures.ts",
-    "recipe:verify-before-you-swap": "tsx recipes/verify-before-you-swap.ts"
+    "recipe:verify-before-you-swap": "tsx recipes/verify-before-you-swap.ts",
+    "dashboard": "pnpm --filter @agentproof/dashboard dev",
+    "dashboard:build": "pnpm --filter @agentproof/dashboard build"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

@@ -1,0 +1,175 @@
+/*
+ * AgentProof dashboard.
+ *
+ * Minimal white and #0D9488 teal, per PRD 7.4. The restraint is the point: this
+ * surface exists to make a policy decision legible in under a second, and every
+ * colour that is not carrying information is competing with the one that is.
+ *
+ * Three colours mean something and nothing else does:
+ *   teal    the product, and an ALLOW
+ *   amber   a decision the owner has to make
+ *   red     a refusal
+ */
+
+:root {
+  color-scheme: light;
+
+  --ink: #0b1220;
+  --ink-2: #35415a;
+  --ink-3: #6b7794;
+  --ink-4: #94a0b8;
+
+  --bg: #ffffff;
+  --bg-2: #f7f9fb;
+  --bg-3: #eef2f7;
+  --line: #e2e8f0;
+  --line-2: #cbd5e1;
+
+  --teal: #0d9488;
+  --teal-ink: #0f766e;
+  --teal-bg: #f0fdfa;
+  --teal-line: #99f6e4;
+
+  --amber: #b45309;
+  --amber-bg: #fffbeb;
+  --amber-line: #fde68a;
+
+  --red: #b91c1c;
+  --red-bg: #fef2f2;
+  --red-line: #fecaca;
+
+  --radius: 10px;
+  --radius-sm: 7px;
+
+  --shadow-1: 0 1px 2px rgba(11, 18, 32, 0.05), 0 1px 3px rgba(11, 18, 32, 0.04);
+  --shadow-2: 0 4px 12px rgba(11, 18, 32, 0.07), 0 2px 4px rgba(11, 18, 32, 0.04);
+
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", sans-serif;
+
+  --header-h: 60px;
+  --footer-h: 78px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --ink: #e8edf5;
+    --ink-2: #b3bed3;
+    --ink-3: #8592ab;
+    --ink-4: #64708a;
+
+    --bg: #0b1220;
+    --bg-2: #111a2b;
+    --bg-3: #172136;
+    --line: #223049;
+    --line-2: #2d3d5a;
+
+    --teal: #2dd4bf;
+    --teal-ink: #5eead4;
+    --teal-bg: #062c2a;
+    --teal-line: #115e59;
+
+    --amber: #fbbf24;
+    --amber-bg: #2a1f05;
+    --amber-line: #78350f;
+
+    --red: #f87171;
+    --red-bg: #2b1010;
+    --red-line: #7f1d1d;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.45);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, p, figure, ul, ol {
+  margin: 0;
+}
+
+ul, ol {
+  padding: 0;
+  list-style: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: var(--teal-ink);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+/* Every interactive element gets a visible keyboard ring. A dashboard whose
+   only control is an irreversible approval must be operable without a mouse. */
+:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--teal-line);
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  font-variant-ligatures: none;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Visually hidden, still announced. Used for live regions. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
