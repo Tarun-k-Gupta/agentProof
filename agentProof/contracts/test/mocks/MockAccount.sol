@@ -35,7 +35,7 @@ contract MockAccount {
         (bool ok, bytes memory ret) = target.call(callData);
         if (!ok) _bubbleRevert(ret);
 
-        IERC7579Hook(_hook).postCheck(hookData, ok, ret);
+        IERC7579Hook(_hook).postCheck(hookData);
     }
 
     /// @notice Convenience: move `amount` of `asset` to `target`.

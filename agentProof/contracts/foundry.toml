@@ -5,6 +5,10 @@ libs = ["lib"]
 test = "test"
 script = "script"
 solc_version = "0.8.28"
+# Required by the pinned ERC-7579 reference account and by EntryPoint v0.8,
+# whose reentrancy guard is transient storage. On a pre-Cancun EVM the guard
+# misfires and every handleOps reverts with Reentrancy().
+evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
 via_ir = false
@@ -34,3 +38,14 @@ sepolia = { key = "${ETHERSCAN_API_KEY}" }
 
 [rpc_endpoints]
 sepolia = "${SEPOLIA_RPC_URL}"
+
+# Pinned Solidity dependencies (installed with `forge install`, contracts/lib is
+# gitignored — CI reinstalls them). Recorded here because two of these versions
+# are load-bearing and were arrived at the hard way:
+#
+#   erc7579-implementation  v0.3.1  the reference account we install the hook on
+#   account-abstraction     v0.8.0  v0.7 predates ISenderCreator, which the
+#                                   reference's EntryPoint test helper needs;
+#                                   v0.9 gates handleOps behind
+#                                   `tx.origin == msg.sender && no code`, so a
+#                                   test contract cannot call it at all.

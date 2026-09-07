@@ -47,10 +47,27 @@ jobs:
       # contracts/lib is gitignored and there is no submodule, so the checkout
       # arrives without forge-std and every `forge` command below fails on a
       # missing import rather than on anything about this repo.
-      - run: forge install foundry-rs/forge-std --no-git --root contracts
+      # contracts/lib is gitignored and there is no submodule, so the checkout
+      # arrives without any Solidity dependency. Versions are pinned: see the
+      # note at the bottom of contracts/foundry.toml for why these two in
+      # particular cannot drift.
+      - name: Install pinned Solidity dependencies
+        run: |
+          forge install foundry-rs/forge-std --no-git --root contracts
+          forge install erc7579/erc7579-implementation --no-git --root contracts
+          forge install eth-infinitism/account-abstraction@v0.8.0 --no-git --root contracts
+          forge install vectorized/solady --no-git --root contracts
+          forge install rhinestonewtf/sentinellist --no-git --root contracts
+          forge install OpenZeppelin/openzeppelin-contracts --no-git --root contracts
 
       - run: forge fmt --check --root contracts
       - run: forge build --root contracts
       - run: forge test --root contracts -vvv
+
+      # Gate G1 (PRD 15): the hook installed on the reference ERC-7579 account,
+      # driven through a real EntryPoint. Called out separately from the unit
+      # suite because it is the one result the whole project rests on.
+      - name: Gate G1 - the account rejects a UserOp that bypasses the SDK
+        run: forge test --root contracts --match-path 'test/integration/*' -vv
       - name: Invariant campaign
         run: FOUNDRY_PROFILE=deep forge test --root contracts --match-path 'test/invariant/*' -vv

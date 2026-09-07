@@ -5,10 +5,14 @@
   "agentPolicyHook": "0x0000000000000000000000000000000000000000",
   "smartAccount": "0x0000000000000000000000000000000000000000",
   "accountImplementation": {
-    "_comment": "Pin this. Read its HookManager and confirm the preCheck/postCheck signatures before installing.",
-    "name": "",
-    "version": "",
-    "address": "0x0000000000000000000000000000000000000000"
+    "_comment": "Pinned per PRD 8.2. Its HookManager calls postCheck(bytes) — selector 0x173bf7da — not the draft postCheck(bytes,bool,bytes) (0xaacbd72a). AgentPolicyHook implements the former; test/integration/RealAccount.t.sol installs the hook on this account and drives it through a real EntryPoint to prove it.",
+    "name": "MSAAdvanced (ERC-7579 reference implementation)",
+    "source": "https://github.com/erc7579/erc7579-implementation",
+    "version": "0.3.1",
+    "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
+    "entryPointVersion": "v0.8.0",
+    "address": "0x0000000000000000000000000000000000000000",
+    "factory": "0x0000000000000000000000000000000000000000"
   },
   "usdc": "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238",
   "uniswapUniversalRouter": "0x3a9d48ab9751398bbfa63ad67599bb04e4bdf98b",

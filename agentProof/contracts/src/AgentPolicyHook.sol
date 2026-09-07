@@ -121,7 +121,7 @@ contract AgentPolicyHook is IERC7579Hook {
     }
 
     /// @inheritdoc IERC7579Hook
-    function postCheck(bytes calldata hookData, bool, bytes calldata) external {
+    function postCheck(bytes calldata hookData) external {
         Config memory c = config[msg.sender];
         if (!c.installed) revert NotInstalled();
 

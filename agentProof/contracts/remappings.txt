@@ -1,1 +1,7 @@
 forge-std/=lib/forge-std/src/
+erc7579/=lib/erc7579-implementation/src/
+sentinellist/=lib/sentinellist/src/
+solady/=lib/solady/src/
+account-abstraction/=lib/account-abstraction/contracts/
+@openzeppelin/=lib/openzeppelin-contracts/
+erc7579-test/=lib/erc7579-implementation/test/
