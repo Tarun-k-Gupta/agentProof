@@ -102,12 +102,30 @@ export interface ApprovalOutcome {
   by: string;
 }
 
+/**
+ * One policy's verdict, kept for display.
+ *
+ * `evaluate` stops deciding at the first BLOCK, but the dashboard checklist and
+ * the terminal summary want every row — a viewer should see that four policies
+ * passed and one failed, not just the one that fired. Every policy is still
+ * evaluated (the checks are pure); only the *decision* short-circuits.
+ */
+export interface PolicyCheck {
+  /** policy id, e.g. 'maxTransaction' */
+  policy: string;
+  decision: Decision;
+  reason?: string;
+  provenance?: Provenance;
+}
+
 export interface PolicyResult {
   decision: Decision;
   /** human-readable, shown in the dashboard and the terminal */
   reason: string;
   intent: NormalizedIntent;
   violations: PolicyViolation[];
+  /** every policy's verdict, in evaluation order — the dashboard checklist */
+  checks: PolicyCheck[];
   proof?: ProofReference;
   approvalRequest?: ApprovalRequest;
   /** present when decision === 'ALLOW' and the action was executed */

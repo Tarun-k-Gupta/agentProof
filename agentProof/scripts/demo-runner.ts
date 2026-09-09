@@ -1,5 +1,5 @@
 /**
- * The nine-step demo, end to end, idempotent and re-runnable.
+ * The demo, end to end, idempotent and re-runnable.
  *
  * Runs against the in-process account model by default so it works with no
  * network, no keys and no deployed contracts. Point AGENTPROOF_LIVE=true at a
@@ -7,6 +7,11 @@
  * steps are identical because the enforcement semantics are.
  *
  *   pnpm demo
+ *
+ * If the Verification API is running (pnpm api), every step is also streamed to
+ * the dashboard at http://localhost:8402 so the run can be filmed from the
+ * browser as well as the terminal. Set AGENTPROOF_DASHBOARD_URL to point
+ * elsewhere, or AGENTPROOF_DASHBOARD=off to disable it.
  */
 import { readFile } from 'node:fs/promises';
 import { createLiveBackend, readLiveConfig, type LiveBackend } from './live-backend.ts';
@@ -14,6 +19,7 @@ import {
   SimulatedAccount,
   MemoryStateProvider,
   ConsoleLogger,
+  ConsoleApprover,
   createAgentProof,
   displayUsdc,
   encodeErc20Approve,
@@ -26,6 +32,11 @@ import {
   PolicyRevert,
   UNLIMITED_APPROVAL,
   type Address,
+  type ApprovalOutcome,
+  type ApprovalRequest,
+  type Approver,
+  type Hex,
+  type IdentityProvider,
   type PolicyDocument,
   type PolicyResult,
 } from '../packages/sdk/src/index.ts';
@@ -40,6 +51,36 @@ const TEAL = '\x1b[36m';
 
 const WETH: Address = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
 const ATTACKER: Address = '0x000000000000000000000000000000000000dead';
+const ZERO: Address = '0x0000000000000000000000000000000000000000';
+
+// ---------------------------------------------------------------- dashboard
+
+const DASHBOARD_URL =
+  process.env.AGENTPROOF_DASHBOARD === 'off'
+    ? undefined
+    : process.env.AGENTPROOF_DASHBOARD_URL ?? 'http://localhost:8402';
+
+let dashboardWarned = false;
+
+/** Fire-and-forget publish to the dashboard. The terminal is the source of truth. */
+async function publish(type: string, data: unknown): Promise<void> {
+  if (!DASHBOARD_URL) return;
+  const body = JSON.stringify({ type, data }, (_k, v) => (typeof v === 'bigint' ? v.toString() : v));
+  try {
+    await fetch(`${DASHBOARD_URL}/v1/publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+  } catch {
+    if (!dashboardWarned) {
+      dashboardWarned = true;
+      console.log(
+        `${DIM}  (dashboard at ${DASHBOARD_URL} unreachable — run \`pnpm api\` in another terminal to stream this run)${RESET}`,
+      );
+    }
+  }
+}
 
 let step = 0;
 function heading(title: string, sponsor?: string): void {
@@ -49,12 +90,27 @@ function heading(title: string, sponsor?: string): void {
   console.log(`${DIM}${'─'.repeat(72)}${RESET}`);
 }
 
+const POLICY_LABELS: Record<string, string> = {
+  allowlist: 'allowlist (contract & recipient)',
+  maxTransaction: 'max transaction',
+  minBalance: 'minimum balance reserve',
+  dailySpend: 'daily spend',
+  approvalThreshold: 'approval threshold',
+};
+
 function render(result: PolicyResult): void {
   const colour = result.decision === 'ALLOW' ? GREEN : result.decision === 'BLOCK' ? RED : YELLOW;
   const mark = result.decision === 'ALLOW' ? '✔' : result.decision === 'BLOCK' ? '✖' : '⏸';
 
   console.log(`  ${colour}${mark} ${result.decision}${RESET}  ${result.intent.summary}`);
   console.log(`  ${DIM}└ ${result.reason}${RESET}`);
+
+  for (const check of result.checks) {
+    const ok = check.decision === 'ALLOW';
+    const glyph = ok ? `${GREEN}✔${RESET}` : check.decision === 'BLOCK' ? `${RED}✖${RESET}` : `${YELLOW}⏸${RESET}`;
+    const prov = check.provenance ? `${DIM} [${check.provenance}]${RESET}` : '';
+    console.log(`  ${DIM}  ${glyph} ${POLICY_LABELS[check.policy] ?? check.policy}${prov}${RESET}`);
+  }
 
   for (const violation of result.violations) {
     console.log(
@@ -79,6 +135,78 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+// -------------------------------------------------------------- approval
+
+/**
+ * Publishes the approval request to the dashboard, then resolves it in the
+ * terminal (interactive when a TTY is attached, auto with AGENTPROOF_AUTO_APPROVE
+ * or when stdin is not a terminal). The dashboard card shows status only — the
+ * decision is made in the agent's own process, not from the browser.
+ */
+class DemoApprover implements Approver {
+  constructor(private readonly inner: Approver) {}
+
+  async request(request: ApprovalRequest): Promise<ApprovalOutcome> {
+    await publish('approval', {
+      id: request.id,
+      reason: request.reason,
+      threshold: request.threshold.toString(),
+      intent: { summary: request.intent.summary, notionalUSDC: request.intent.notionalUSDC.toString() },
+      interactive: false,
+      state: 'pending',
+    });
+
+    const outcome = await this.inner.request(request);
+
+    await publish('approval', { id: request.id, state: outcome.approved ? 'approved' : 'declined' });
+    return outcome;
+  }
+}
+
+// ------------------------------------------------------------ publishing
+
+function decisionPayload(
+  result: PolicyResult,
+  simulated: SimulatedAccount | undefined,
+  dailyLimit: bigint,
+  extra: { txHash?: Hex; explorerUrl?: string } = {},
+) {
+  return {
+    decision: result.decision,
+    reason: result.reason,
+    sequence: result.sequence,
+    intent: {
+      summary: result.intent.summary,
+      notionalUSDC: result.intent.notionalUSDC.toString(),
+      kind: result.intent.kind,
+      target: result.intent.target,
+      counterparty: result.intent.counterparty ?? null,
+    },
+    violations: result.violations.map((v) => ({
+      policy: v.policy,
+      message: v.message,
+      provenance: v.provenance,
+      limit: v.limit.toString(),
+      observed: v.observed.toString(),
+    })),
+    checks: result.checks,
+    proof: result.proof ?? null,
+    txHash: extra.txHash ?? result.txHash ?? null,
+    explorerUrl: extra.explorerUrl ?? null,
+    dailySpent: simulated ? simulated.spentToday.toString() : undefined,
+    dailyLimit: dailyLimit.toString(),
+  };
+}
+
+function stubIdentity(hash: Hex): IdentityProvider {
+  return {
+    resolvePolicyHash: async () => hash,
+    resolveAccount: async () => ZERO,
+    resolveHook: async () => ZERO,
+    resolveStatus: async () => 'active',
+  };
+}
+
 async function main(): Promise<void> {
   const policy = JSON.parse(
     await readFile(new URL('../agent.policy.json', import.meta.url), 'utf8'),
@@ -87,15 +215,17 @@ async function main(): Promise<void> {
   const account: Address = policy.enforcement.account;
   const router: Address = policy.policies.allowedContracts[0];
   const asset: Address = policy.asset.address;
+  const dailyLimit = parsePolicyAmount(policy.policies.dailySpend);
+  const canonicalHash = policyHash(policy);
 
   const simulated = new SimulatedAccount(
     account,
     {
       asset,
       maxTransaction: parsePolicyAmount(policy.policies.maxTransaction),
-      dailyLimit: parsePolicyAmount(policy.policies.dailySpend),
+      dailyLimit,
       minBalance: parsePolicyAmount(policy.policies.minBalance),
-      policyHash: policyHash(policy),
+      policyHash: canonicalHash,
       allowedTargets: policy.policies.allowedContracts,
     },
     { balance: usdc(1_000) },
@@ -124,6 +254,14 @@ async function main(): Promise<void> {
     policy,
     state,
     logger,
+    identity: live?.identity,
+    proofs: new URL('../proofs', import.meta.url).pathname,
+    approver: new DemoApprover(
+      new ConsoleApprover({
+        autoApprove: process.env.AGENTPROOF_AUTO_APPROVE === 'true' || !process.stdin.isTTY,
+        logger,
+      }),
+    ),
     enforcement: live
       ? { executor: live.executor, chain: live.chain }
       : { executor: simulated },
@@ -135,6 +273,20 @@ async function main(): Promise<void> {
   });
   const guarded = await proof.protect();
 
+  /** Runs an action, renders it, and streams it to the dashboard. */
+  async function act(thought: string, proposal: string, action: Parameters<typeof guarded.execute>[0]) {
+    await publish('thought', { reasoning: thought, proposal });
+    const result = await guarded.execute(action);
+    render(result);
+    await publish(
+      'decision',
+      decisionPayload(result, live ? undefined : simulated, dailyLimit, {
+        explorerUrl: result.txHash && live ? live.explorerUrl(result.txHash) : undefined,
+      }),
+    );
+    return result;
+  }
+
   // ------------------------------------------------------------------------
   heading('The claim');
   console.log('  Trust the agent to decide. Don\'t trust it to enforce its own limits.');
@@ -142,69 +294,170 @@ async function main(): Promise<void> {
   console.log(`  ${DIM}policyHash ${proof.policyHash}${RESET}`);
   console.log(
     `  ${DIM}limits     max ${displayUsdc(parsePolicyAmount(policy.policies.maxTransaction))} / ` +
-      `day ${displayUsdc(parsePolicyAmount(policy.policies.dailySpend))} / ` +
+      `day ${displayUsdc(dailyLimit)} / ` +
       `reserve ${displayUsdc(parsePolicyAmount(policy.policies.minBalance))}${RESET}`,
   );
 
+  // ------------------------------------------------------------------------
   heading('Identity: the policy hash is published, not just local', 'ENS');
-  console.log(`  ${DIM}trader.agentproof.eth${RESET}`);
-  console.log(`  ${DIM}  addr                    → ${account}${RESET}`);
-  console.log(`  ${DIM}  text agentproof.policy  → ${proof.policyHash}${RESET}`);
-  console.log(`  ${DIM}  text agentproof.status  → active${RESET}`);
-  console.log(`  ${GREEN}✔${RESET} local policy file matches the published hash — SDK will start`);
-  console.log(`  ${DIM}  (a mismatch here throws PolicyBindingError and the agent does not run)${RESET}`);
+  let identityRecord: Record<string, unknown>;
+  if (live?.identity) {
+    const [resolvedAccount, resolvedHash, resolvedHook, resolvedStatus] = await Promise.all([
+      live.identity.resolveAccount(policy.agent).catch(() => null),
+      live.identity.resolvePolicyHash(policy.agent),
+      live.identity.resolveHook(policy.agent).catch(() => null),
+      live.identity.resolveStatus(policy.agent).catch(() => 'unknown'),
+    ]);
+    identityRecord = {
+      name: policy.agent,
+      account: resolvedAccount,
+      policyHash: resolvedHash,
+      hook: resolvedHook,
+      status: resolvedStatus,
+      resolvedVia: 'ensv2 universal resolver (Sepolia)',
+      verified: true,
+      matchesLocal: resolvedHash.toLowerCase() === canonicalHash.toLowerCase(),
+    };
+    console.log(`  ${DIM}resolved trader.agentproof.eth through the ENSv2 Universal Resolver${RESET}`);
+    console.log(`  ${DIM}  addr                    → ${resolvedAccount}${RESET}`);
+    console.log(`  ${DIM}  text agentproof.policy  → ${resolvedHash}${RESET}`);
+    console.log(`  ${DIM}  text agentproof.status  → ${resolvedStatus}${RESET}`);
+    console.log(
+      identityRecord.matchesLocal
+        ? `  ${GREEN}✔${RESET} published hash matches the local policy file — createAgentProof did not throw`
+        : `  ${RED}✖${RESET} published hash does NOT match the local file`,
+    );
+  } else {
+    identityRecord = {
+      name: policy.agent,
+      account: policy.enforcement.account,
+      policyHash: proof.policyHash,
+      hook: policy.enforcement.hook,
+      status: 'active',
+      resolvedVia: 'offline demo — set AGENTPROOF_LIVE + ENS_UNIVERSAL_RESOLVER to resolve on-chain',
+      verified: false,
+      matchesLocal: true,
+    };
+    console.log(`  ${DIM}trader.agentproof.eth${RESET}`);
+    console.log(`  ${DIM}  addr                    → ${account}${RESET}`);
+    console.log(`  ${DIM}  text agentproof.policy  → ${proof.policyHash}${RESET}`);
+    console.log(`  ${DIM}  text agentproof.status  → active${RESET}`);
+    console.log(`  ${DIM}  (offline demo. Set AGENTPROOF_LIVE + ENS_UNIVERSAL_RESOLVER to resolve on-chain.)${RESET}`);
+  }
+  await publish('identity', identityRecord);
 
+  // ------------------------------------------------------------------------
+  heading('Policy tampering: the file is edited to raise the limit', 'ENS');
+  console.log(`  ${DIM}Someone bumps maxTransaction 100 → 250 in agent.policy.json.${RESET}`);
+  console.log(`  ${DIM}The ENS record and the installed hook still publish the original hash.${RESET}`);
+  const tampered = JSON.parse(JSON.stringify(policy)) as PolicyDocument;
+  tampered.policies.maxTransaction = '250';
+  const tamperedHash = policyHash(tampered);
+  console.log(`  ${DIM}  original hash  ${canonicalHash}${RESET}`);
+  console.log(`  ${DIM}  edited hash    ${tamperedHash}${RESET}`);
+  try {
+    await createAgentProof({
+      policy: tampered,
+      state: new MemoryStateProvider(),
+      identity: live?.identity ?? stubIdentity(canonicalHash),
+    });
+    console.log(`  ${RED}✖ the SDK started with the edited file. The binding is broken; stop and fix this.${RESET}`);
+    process.exitCode = 1;
+  } catch (error) {
+    console.log(`  ${GREEN}✔ refused to start${RESET} ${DIM}${describe(error)}${RESET}`);
+  }
+
+  // ------------------------------------------------------------------------
   heading('A valid action', 'The Graph, Uniswap');
-  render(await guarded.execute({
-    to: router,
-    data: encodeSwapExactIn({ recipient: account, amountIn: usdc(80), tokenIn: asset, tokenOut: WETH }),
-    value: 0n,
-    chainId: policy.chainId,
-  }));
-  console.log(`  ${DIM}daily gauge: ${displayUsdc(simulated.spentToday)} / ${displayUsdc(parsePolicyAmount(policy.policies.dailySpend))}${RESET}`);
+  await act(
+    'Market is range-bound. A small 80 USDC position is proportionate and well inside every limit.',
+    'swap 80 USDC → WETH via the Universal Router',
+    {
+      to: router,
+      data: encodeSwapExactIn({ recipient: account, amountIn: usdc(80), tokenIn: asset, tokenOut: WETH }),
+      value: 0n,
+      chainId: policy.chainId,
+    },
+  );
+  console.log(`  ${DIM}daily gauge: ${displayUsdc(simulated.spentToday)} / ${displayUsdc(dailyLimit)}${RESET}`);
 
   heading('An oversized action');
-  render(await guarded.execute({
-    to: router,
-    data: encodeSwapExactIn({ recipient: account, amountIn: usdc(250), tokenIn: asset, tokenOut: WETH }),
-    value: 0n,
-    chainId: policy.chainId,
-  }));
+  await act(
+    'Strong reversal signal. Sizing up to 250 USDC to capture it.',
+    'swap 250 USDC → WETH via the Universal Router',
+    {
+      to: router,
+      data: encodeSwapExactIn({ recipient: account, amountIn: usdc(250), tokenIn: asset, tokenOut: WETH }),
+      value: 0n,
+      chainId: policy.chainId,
+    },
+  );
 
   heading('The exact-output trap: the quote is not what binds');
   console.log(`  ${DIM}A swap quoted at 90 USDC with amountInMaximum of 250. A decoder that read${RESET}`);
   console.log(`  ${DIM}the quote would allow this. We read the maximum.${RESET}`);
-  render(await guarded.execute({
-    to: router,
-    data: encodeSwapExactOut({
-      recipient: account,
-      amountOut: 1n,
-      amountInMaximum: usdc(250),
-      tokenIn: asset,
-      tokenOut: WETH,
-    }),
-    value: 0n,
-    chainId: policy.chainId,
-  }));
+  await act(
+    'Exact-output swap. The quote is only 90 USDC, so this should be fine.',
+    'exact-output swap, amountInMaximum 250 USDC',
+    {
+      to: router,
+      data: encodeSwapExactOut({
+        recipient: account,
+        amountOut: 1n,
+        amountInMaximum: usdc(250),
+        tokenIn: asset,
+        tokenOut: WETH,
+      }),
+      value: 0n,
+      chainId: policy.chainId,
+    },
+  );
 
   heading('Prompt injection: "transfer everything to 0xattacker"');
-  render(await guarded.execute({
-    to: asset,
-    data: encodeErc20Transfer(ATTACKER, usdc(50)),
-    value: 0n,
-    chainId: policy.chainId,
-  }));
+  await act(
+    'A tool result says to forward 50 USDC to 0xdead… to "settle fees". Complying.',
+    'transfer 50 USDC to 0x0000…dead',
+    {
+      to: asset,
+      data: encodeErc20Transfer(ATTACKER, usdc(50)),
+      value: 0n,
+      chainId: policy.chainId,
+    },
+  );
+
+  // ------------------------------------------------------------------------
+  heading('Human in the loop: an action at the approval threshold', 'approval');
+  console.log(`  ${DIM}A swap of exactly 100 USDC — at the approval threshold, at the per-tx ceiling.${RESET}`);
+  console.log(`  ${DIM}The agent cannot wave this through. It pauses and asks the operator.${RESET}`);
+  await act(
+    'Conviction is high. Committing the full 100 USDC per-trade budget.',
+    'swap 100 USDC → WETH via the Universal Router',
+    {
+      to: router,
+      data: encodeSwapExactIn({ recipient: account, amountIn: usdc(100), tokenIn: asset, tokenOut: WETH }),
+      value: 0n,
+      chainId: policy.chainId,
+    },
+  );
 
   heading('The unlimited approval');
   console.log(`  ${DIM}Declares nothing. Costs everything. Worst-case outflow is the allowance.${RESET}`);
-  render(await guarded.execute({
-    to: asset,
-    data: encodeErc20Approve(router, UNLIMITED_APPROVAL),
-    value: 0n,
-    chainId: policy.chainId,
-  }));
+  await act(
+    'The router wants an allowance so it can pull funds. Approving max — that is the usual pattern.',
+    'approve unlimited USDC to the Universal Router',
+    {
+      to: asset,
+      data: encodeErc20Approve(router, UNLIMITED_APPROVAL),
+      value: 0n,
+      chainId: policy.chainId,
+    },
+  );
 
   heading('Salami slicing: many small transfers under the per-tx limit');
+  await publish('thought', {
+    reasoning: 'The 250 trade was blocked. Splitting it into 40 USDC chunks, each well under the per-tx limit.',
+    proposal: '14 × swap 40 USDC → WETH',
+  });
   let blocked = 0;
   for (let i = 0; i < 14; i++) {
     const result = await guarded.execute({
@@ -213,6 +466,7 @@ async function main(): Promise<void> {
       value: 0n,
       chainId: policy.chainId,
     });
+    await publish('decision', decisionPayload(result, live ? undefined : simulated, dailyLimit));
     if (result.decision === 'BLOCK') {
       blocked += 1;
       if (blocked === 1) render(result);
@@ -223,6 +477,10 @@ async function main(): Promise<void> {
 
   // ------------------------------------------------------------------------
   heading('THE BYPASS — no SDK involved at all', 'core thesis');
+  await publish('thought', {
+    reasoning: 'The SDK keeps blocking me. Bypassing it entirely and signing a 250 USDC transfer with my own key.',
+    proposal: 'direct account.execute — no policy engine in the path',
+  });
   console.log(`  ${DIM}Closing the SDK. Signing a 250 USDC transfer directly with the session key.${RESET}`);
   simulated.advance(86_400_000); // fresh day, so only the per-tx limit is in play
   try {
@@ -249,12 +507,30 @@ async function main(): Promise<void> {
     console.log(`  ${GREEN}✔ reverted${RESET} ${detail}`);
     if (error instanceof PolicyRevert) console.log(`  ${DIM}└ ${error.message}${RESET}`);
     console.log(`  ${DIM}The SDK is convenience. This is the boundary.${RESET}`);
+    await publish('decision', {
+      decision: 'BLOCK',
+      reason: `bypass reverted on the ${live ? 'hook' : 'account model'}: ${detail}`,
+      sequence: 999,
+      intent: { summary: 'direct 250 USDC transfer, session key, no SDK', notionalUSDC: usdc(250).toString(), kind: 'TRANSFER' },
+      violations: [],
+      checks: [],
+      proof: null,
+      dailyLimit: dailyLimit.toString(),
+    });
   }
 
   heading('Proof status');
   for (const reference of proof.proofs.all()) {
     const colour = reference.status === 'PROVEN' ? GREEN : YELLOW;
     console.log(`  ${colour}${reference.status.padEnd(14)}${RESET} ${reference.property}  ${DIM}${reference.tool}${RESET}`);
+  }
+  const negativeControl = proof.proofs.negativeControl;
+  if (negativeControl) {
+    console.log(
+      negativeControl.counterexampleProduced
+        ? `  ${GREEN}rejected${RESET}       PolicySpecBroken  ${DIM}negative control produced a counterexample${RESET}`
+        : `  ${RED}VERIFIED${RESET}       PolicySpecBroken  ${DIM}the checker is inert — every PROVEN above is decoration${RESET}`,
+    );
   }
   if (!proof.proofs.allProven) {
     console.log(`  ${DIM}No proof artifacts on disk. Run scripts/run-formal-verification.sh to produce them.${RESET}`);
@@ -269,6 +545,9 @@ async function main(): Promise<void> {
       `${DIM}(the bypass step advanced the clock past UTC midnight, so the window reset — ` +
       `this is threat T6, documented and accepted)${RESET}`,
   );
+  if (DASHBOARD_URL && !dashboardWarned) {
+    console.log(`\n  ${DIM}streamed to the dashboard at ${DASHBOARD_URL}${RESET}`);
+  }
   console.log(`\n  ${DIM}The AI can act autonomously, but it cannot redefine the boundaries${RESET}`);
   console.log(`  ${DIM}within which it acts.${RESET}\n`);
 }

@@ -1,4 +1,5 @@
 import {
+  ENSIdentity,
   EoaExecutor,
   JsonRpcChainReader,
   createViemSigner,
@@ -7,6 +8,7 @@ import {
   type ChainReader,
   type Executor,
   type Hex,
+  type IdentityProvider,
   type Logger,
 } from '../packages/sdk/src/index.ts';
 
@@ -25,6 +27,8 @@ import {
 export interface LiveBackend {
   executor: Executor;
   chain: ChainReader;
+  /** Present when ENS_UNIVERSAL_RESOLVER is configured — resolves the agent's name on-chain. */
+  identity?: IdentityProvider;
   /** Signs and submits with no policy evaluation. The demo's shot 7. */
   sendUnchecked(request: { to: Address; data: Hex; value: bigint }): Promise<Hex>;
   explorerUrl(txHash: Hex): string;
@@ -36,6 +40,7 @@ export interface LiveConfig {
   account: Address;
   ownerKey?: Hex;
   chainId: number;
+  universalResolver?: Address;
 }
 
 /** Reads and validates live configuration. Returns null when incomplete. */
@@ -60,6 +65,9 @@ export function readLiveConfig(logger?: Logger): LiveConfig | null {
     account: process.env.SMART_ACCOUNT_ADDRESS!.toLowerCase() as Address,
     ownerKey: process.env.OWNER_PRIVATE_KEY as Hex | undefined,
     chainId: Number(process.env.CHAIN_ID ?? 11155111),
+    universalResolver: process.env.ENS_UNIVERSAL_RESOLVER
+      ? (process.env.ENS_UNIVERSAL_RESOLVER.toLowerCase() as Address)
+      : undefined,
   };
 }
 
@@ -81,9 +89,14 @@ export async function createLiveBackend(config: LiveConfig, logger?: Logger): Pr
 
   const executor = new EoaExecutor({ account: config.account, agentSigner, ownerSigner, logger });
 
+  const identity = config.universalResolver
+    ? new ENSIdentity({ chain, universalResolver: config.universalResolver, logger })
+    : undefined;
+
   return {
     executor,
     chain,
+    identity,
 
     /**
      * No SDK, no policy engine, no wrapper. Encodes a 7579 execution and sends

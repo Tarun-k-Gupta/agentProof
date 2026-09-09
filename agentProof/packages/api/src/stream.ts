@@ -12,7 +12,7 @@ import type { ServerResponse } from 'node:http';
  * guarded by an id the server issued — see routes/approve.
  */
 export interface StreamEvent {
-  type: 'decision' | 'thought' | 'approval';
+  type: 'decision' | 'thought' | 'approval' | 'identity';
   data: unknown;
 }
 

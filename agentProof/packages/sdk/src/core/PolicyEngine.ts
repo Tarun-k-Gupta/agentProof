@@ -3,6 +3,7 @@ import type {
   Decision,
   NormalizedIntent,
   Policy,
+  PolicyCheck,
   PolicyResult,
   PolicyState,
   PolicyViolation,
@@ -50,24 +51,43 @@ export class PolicyEngine {
    *   5. approvalThreshold  last, since it can only upgrade a pass
    *
    * Rules:
-   *   - a BLOCK short-circuits and returns immediately with the violations
-   *     found so far
+   *   - a BLOCK settles the decision; the violations returned are those found up
+   *     to and including the policy that blocked
    *   - REQUIRE_APPROVAL never overrides a BLOCK
    *   - ALLOW requires every policy to pass
+   *
+   * Every policy is still evaluated even after a BLOCK, so `checks` carries a
+   * full row per policy for the dashboard. Those evaluations are pure; only the
+   * decision short-circuits.
    */
   evaluate(intent: NormalizedIntent, state: PolicyState): PolicyResult {
     const violations: PolicyViolation[] = [];
+    const checks: PolicyCheck[] = [];
     let decision: Decision = 'ALLOW';
     let reason = 'within all policy limits';
     let decidingPolicy: string | undefined;
+    let settled = false;
 
     for (const policy of this.options.policies) {
       const evaluation = policy.evaluate(intent, state);
 
+      checks.push({
+        policy: policy.id,
+        decision: evaluation.decision,
+        reason: evaluation.reason,
+        provenance: evaluation.violation?.provenance,
+      });
+
+      if (settled) continue;
+
       if (evaluation.violation) violations.push(evaluation.violation);
 
       if (evaluation.decision === 'BLOCK') {
-        return this.result('BLOCK', evaluation.reason ?? 'blocked by policy', intent, violations, policy.id);
+        decision = 'BLOCK';
+        reason = evaluation.reason ?? 'blocked by policy';
+        decidingPolicy = policy.id;
+        settled = true;
+        continue;
       }
 
       if (evaluation.decision === 'REQUIRE_APPROVAL' && decision === 'ALLOW') {
@@ -77,7 +97,7 @@ export class PolicyEngine {
       }
     }
 
-    return this.result(decision, reason, intent, violations, decidingPolicy);
+    return this.result(decision, reason, intent, violations, checks, decidingPolicy);
   }
 
   /** Convenience: decode then evaluate. */
@@ -90,6 +110,7 @@ export class PolicyEngine {
     reason: string,
     intent: NormalizedIntent,
     violations: PolicyViolation[],
+    checks: PolicyCheck[],
     decidingPolicy?: string,
   ): PolicyResult {
     return {
@@ -97,6 +118,7 @@ export class PolicyEngine {
       reason,
       intent,
       violations,
+      checks,
       // A proof reference is attached only when the policy that actually
       // decided is one we have a proof for. Attaching proofs to unrelated
       // decisions would be proof theatre.
