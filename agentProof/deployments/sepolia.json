@@ -2,8 +2,8 @@
   "_comment": "Written by contracts/script/Deploy.s.sol. Single source of truth for addresses — read by the SDK, the API and the dashboard. Entries under `verified` were confirmed to have bytecode on Sepolia on the date shown; entries that are still the zero address have not been deployed yet, and the API refuses to start in production mode while any of them are.",
   "chainId": 11155111,
   "network": "sepolia",
-  "agentPolicyHook": "0x0000000000000000000000000000000000000000",
-  "smartAccount": "0x0000000000000000000000000000000000000000",
+  "agentPolicyHook": "0xEbB1c3Ae1b502409E64DAA908bd7EDe9cf267E59",
+  "smartAccount": "0x67B9Ee93208914fDD829fdAaF24E87D33f75d441",
   "accountImplementation": {
     "_comment": "Pinned per PRD 8.2. Its HookManager calls postCheck(bytes) — selector 0x173bf7da — not the draft postCheck(bytes,bool,bytes) (0xaacbd72a). AgentPolicyHook implements the former; test/integration/RealAccount.t.sol installs the hook on this account and drives it through a real EntryPoint to prove it.",
     "name": "MSAAdvanced (ERC-7579 reference implementation)",
@@ -11,12 +11,14 @@
     "version": "0.3.1",
     "entryPoint": "0x0000000071727de22e5e9d8baf0edac6f37da032",
     "entryPointVersion": "v0.8.0",
-    "address": "0x0000000000000000000000000000000000000000",
-    "factory": "0x0000000000000000000000000000000000000000"
+    "address": "0x353983cB05c26883d284091B19f6fe9AD8c828AF",
+    "factory": "0xfceE41FD1332eB1CDb63a651351fE91cc68060a0",
+    "bootstrap": "0xeDa82eD3D49e436D88A0148A72C61917e47E52f4",
+    "sessionValidator": "0xaBdBCE84aFd1CCD14a03ef78F55693daeE6052DB"
   },
   "usdc": "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238",
   "uniswapUniversalRouter": "0x3a9d48ab9751398bbfa63ad67599bb04e4bdf98b",
-  "deployedAtBlock": 0,
+  "deployedAtBlock": 11684190,
   "uniswapUniversalRouterLegacy": {
     "_comment": "The pre-v4 Universal Router. Kept here because it was previously listed as *the* router and it does have bytecode, which is exactly why the mistake survived: it has had no traffic in the window we sampled, and no v4 pool routes through it. Not allowlisted.",
     "address": "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad"
