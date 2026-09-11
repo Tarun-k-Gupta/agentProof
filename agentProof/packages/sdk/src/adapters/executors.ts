@@ -1,5 +1,5 @@
 import type { Address, Hex } from '../core/types.ts';
-import type { Executor, Logger, UserOperationRequest } from '../ports/index.ts';
+import type { ChainReader, Executor, Logger, UserOperationRequest } from '../ports/index.ts';
 import { keccak256 } from '../crypto/keccak.ts';
 
 /**
@@ -89,6 +89,8 @@ export class BundlerExecutor implements Executor {
   private readonly bundlerUrl: string;
   private readonly entryPoint: Address;
   private readonly signUserOpHash: (hash: Hex) => Promise<Hex>;
+  private readonly validator?: Address;
+  private readonly chain?: ChainReader;
   private readonly logger?: Logger;
 
   constructor(options: {
@@ -96,12 +98,26 @@ export class BundlerExecutor implements Executor {
     bundlerUrl: string;
     entryPoint?: Address;
     signUserOpHash: (hash: Hex) => Promise<Hex>;
+    /**
+     * Session validator whose key space the nonce must address. ERC-7579
+     * accounts like MSAAdvanced select the validator from the nonce's high
+     * bits; without this the default sequence-0 nonce addresses validator
+     * 0x0 and the EntryPoint rejects with AA24 before the hook ever runs.
+     */
+    validator?: Address;
+    /**
+     * Read path for validator-keyed nonces. Bundlers do not all serve
+     * eth_call the same way; prefer the plain RPC reader when supplied.
+     */
+    chain?: ChainReader;
     logger?: Logger;
   }) {
     this.account = options.account;
     this.bundlerUrl = options.bundlerUrl;
     this.entryPoint = options.entryPoint ?? ENTRY_POINT_V07;
     this.signUserOpHash = options.signUserOpHash;
+    this.validator = options.validator;
+    this.chain = options.chain;
     this.logger = options.logger;
   }
 
@@ -121,9 +137,7 @@ export class BundlerExecutor implements Executor {
   private async submit(request: UserOperationRequest): Promise<Hex> {
     const callData = encodeErc7579Execute(request.to, request.value, request.data);
 
-    const nonce = await this.rpc<Hex>('eth_getUserOperationNonce', [this.account, this.entryPoint]).catch(
-      () => '0x0' as Hex,
-    );
+    const nonce = request.nonce ?? (await this.resolveNonce());
 
     const userOp: Record<string, string> = {
       sender: this.account,
@@ -157,6 +171,21 @@ export class BundlerExecutor implements Executor {
     this.logger?.log('info', 'user operation submitted', { opHash });
 
     return this.waitForReceipt(opHash);
+  }
+
+  private async resolveNonce(): Promise<Hex> {
+    if (this.validator) {
+      // Mirror of RealAccount.t.sol: key = uint192(bytes24(validator)).
+      const key = (BigInt(this.validator) << 32n).toString(16).padStart(64, '0');
+      const data = `0x35567e1a${this.account.slice(2).toLowerCase().padStart(64, '0')}${key}` as Hex;
+      const raw = this.chain
+        ? await this.chain.call(this.entryPoint, data)
+        : await this.rpc<Hex>('eth_call', [{ to: this.entryPoint, data }, 'latest']);
+      return `0x${BigInt(raw).toString(16)}` as Hex;
+    }
+    return this.rpc<Hex>('eth_getUserOperationNonce', [this.account, this.entryPoint]).catch(
+      () => '0x0' as Hex,
+    );
   }
 
   private async waitForReceipt(opHash: Hex, attempts = 30): Promise<Hex> {

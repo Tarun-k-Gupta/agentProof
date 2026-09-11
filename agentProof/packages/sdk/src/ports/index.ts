@@ -27,6 +27,13 @@ export interface UserOperationRequest {
   to: Address;
   data: Hex;
   value: bigint;
+  /**
+   * Explicit UserOp nonce. ERC-7579 accounts encode the validator in the
+   * high bits (MSAAdvanced reads validator = nonce >> 96), so the default
+   * sequence-0 nonce addresses no validator and fails validation (AA24).
+   * Omit only for accounts that do not encode anything in the nonce.
+   */
+  nonce?: Hex;
 }
 
 export interface Executor {
