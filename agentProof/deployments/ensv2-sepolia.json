@@ -3,10 +3,10 @@
   "chainId": 11155111,
   "parentName": "agentproof.eth",
   "agentSubname": "trader.agentproof.eth",
-  "universalResolver": "0x0000000000000000000000000000000000000000",
-  "permissionedRegistry": "0x0000000000000000000000000000000000000000",
+  "universalResolver": "0x4a1817d13e9cf196f471725176355c1234b63c70",
+  "permissionedRegistry": "0xbdc85dd5b15d7ecb354cd7cb6f2c50b4f2c4f0e2",
   "permissionedResolver": "0x0000000000000000000000000000000000000000",
-  "agentSubnameRegistrar": "0x0000000000000000000000000000000000000000",
+  "agentSubnameRegistrar": "0xe7Eb688ef8cC36871E386E89eeDf1aaFec06B586",
   "roles": {
     "ROLE_REGISTRAR": "1 << 0",
     "ROLE_RENEW": "1 << 16",
@@ -14,5 +14,13 @@
     "ROLE_SET_STATUS_RECORD": "1 << 33",
     "ROLE_SET_HOOK_RECORD": "1 << 34"
   },
-  "textRecords": ["agentproof.policy", "agentproof.hook", "agentproof.status"]
+  "textRecords": [
+    "agentproof.policy",
+    "agentproof.hook",
+    "agentproof.status"
+  ],
+  "namespaceRegistry": "0xAA064fF33E8997a516F99fd3DCa2F7060727296a",
+  "commitTx": "0xd90a2776fb6aa501034429599d5274e609178c4ed03bac0b864d737293b7bf16",
+  "parentTx": "0xbb9ec4900cfdc80d3c0bf692bc56bbc59ed5f6bbf3f8744ecd678c18705667ff",
+  "namespaceResolver": "0x5D1247298C36a03Dc24855be38bFCA78bbB225cE"
 }

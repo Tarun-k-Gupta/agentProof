@@ -4,165 +4,117 @@ pragma solidity ^0.8.28;
 import "forge-std/Test.sol";
 
 import {AgentSubnameRegistrar} from "../src/AgentSubnameRegistrar.sol";
-import {IPermissionedRegistry, IEnhancedAccessControl, ROOT_RESOURCE} from "../src/interfaces/IENSv2.sol";
 import {MockPermissionedRegistry} from "./mocks/MockPermissionedRegistry.sol";
+import {MockPermissionedResolver} from "./mocks/MockPermissionedResolver.sol";
 
 /**
- * The tamper attempt — demo shot 10, and the reason the ENS integration is more
- * than a name lookup.
+ * The tamper attempt: the reason the ENS integration is more than a lookup.
  *
- * PRD 10.2 is explicit that reading a name does not qualify: ENSv2's features
- * have to be central. The feature we lean on is Enhanced Access Control, and
- * the claim it lets us make is an asymmetry:
+ * The claim, expressed over identity rather than funds:
  *
- *     owner key          may repoint agentproof.policy
+ *     owner key          may repoint agentproof.policy / agentproof.hook
  *     agent session key  may set agentproof.status, and nothing else
  *
- * That is the AgentProof thesis expressed over identity rather than funds. The
- * agent can act inside its namespace and cannot rewrite the namespace's rules.
- *
- * The tests below are the proof of it, and the failure they guard against is
- * specific: a permission enforced by a modifier we wrote would be a permission
- * we could quietly drop. These reverts come from the registry's role check.
+ * Records live on the (mock) PermissionedResolver and every write is gated
+ * by its EAC model — part resources, ADMIN-gated delegation — not by a
+ * modifier on our own contract. The reverts below come from the resolver's
+ * role check, except setPolicyHash's owner gate, which exists so a random
+ * caller cannot spend the registrar's retained part-write.
  */
 contract AgentSubnameRegistrarTest is Test {
     MockPermissionedRegistry internal registry;
+    MockPermissionedResolver internal resolver;
     AgentSubnameRegistrar internal registrar;
 
     address internal owner = makeAddr("owner");
     address internal agentSessionKey = makeAddr("agentSessionKey");
     address internal account = makeAddr("smartAccount");
     address internal hook = makeAddr("agentPolicyHook");
-    address internal resolver = makeAddr("permissionedResolver");
     address internal outsider = makeAddr("outsider");
 
     string internal constant LABEL = "trader";
+    bytes internal dns = "\x06trader\x0aagentproof\x03eth\x00";
+    bytes32 internal node;
     bytes32 internal constant POLICY_HASH = keccak256("agentproof/v1 the policy the owner signed off on");
     bytes32 internal constant WIDER_POLICY = keccak256("agentproof/v1 a policy with a much larger daily limit");
 
-    uint256 internal tokenId;
-
     function setUp() public {
+        node = keccak256(dns);
         registry = new MockPermissionedRegistry();
+        resolver = new MockPermissionedResolver();
 
         vm.prank(owner);
-        registrar = new AgentSubnameRegistrar(IPermissionedRegistry(address(registry)), resolver);
+        registrar = new AgentSubnameRegistrar(registry, resolver);
 
-        // The registrar mints under the parent, so it needs the root role. In
-        // production this grant is made once, by whoever controls
-        // agentproof.eth.
-        registry.grantRoles(ROOT_RESOURCE, registry.ROLE_REGISTRAR(), address(registrar));
+        // The registrar mints under the namespace, so it needs the root roles.
+        registry.grantRootRoles((1 << 0) | (1 << 16), address(registrar));
+        // …and node ADMIN so it can delegate the per-record roles below.
+        resolver.authorizeNameRoles(dns, ((1 << 4) << 128) | ((1 << 0) << 128), address(registrar), true);
 
         vm.prank(owner);
-        tokenId = registrar.registerAgent(LABEL, account, agentSessionKey, POLICY_HASH, hook, 365 days);
+        registrar.registerAgent(LABEL, node, dns, account, agentSessionKey, POLICY_HASH, hook, 365 days);
     }
 
     // ------------------------------------------------------ the name is real
 
     function test_MintsTheAgentNamespaceWithItsRecords() public view {
-        assertEq(registry.addr(tokenId), account, "addr must point at the smart account");
-        assertEq(registry.text(tokenId, "agentproof.policy"), _hex32(POLICY_HASH));
-        assertEq(registry.text(tokenId, "agentproof.hook"), _hex20(hook));
-        assertEq(registry.text(tokenId, "agentproof.status"), "active");
+        assertEq(resolver.addr(node, 60), abi.encodePacked(account), "addr must point at the smart account");
+        assertEq(resolver.text(node, "agentproof.policy"), _hex32(POLICY_HASH));
+        assertEq(resolver.text(node, "agentproof.hook"), _hex20(hook));
+        assertEq(resolver.text(node, "agentproof.status"), "active");
     }
 
     function test_RolesEncodeTheTrustModel() public view {
-        bytes32 resource = bytes32(tokenId);
-
-        assertTrue(
-            registry.hasRoles(resource, registry.ROLE_SET_POLICY_RECORD(), owner),
-            "the owner must be able to repoint the policy"
-        );
-        assertTrue(
-            registry.hasRoles(resource, registry.ROLE_SET_STATUS_RECORD(), agentSessionKey),
-            "the agent must be able to suspend itself"
-        );
-        assertFalse(
-            registry.hasRoles(resource, registry.ROLE_SET_POLICY_RECORD(), agentSessionKey),
-            "the agent must NOT hold the policy role"
-        );
-        assertFalse(
-            registry.hasRoles(resource, registry.ROLE_SET_HOOK_RECORD(), agentSessionKey),
-            "the agent must NOT be able to repoint its own enforcement hook"
-        );
+        // Owner holds policy + hook part-write; agent holds status only.
+        assertTrue(_has(_textPart("agentproof.policy"), 1 << 4, owner), "owner writes policy");
+        assertTrue(_has(_textPart("agentproof.hook"), 1 << 4, owner), "owner writes hook");
+        assertTrue(_has(_textPart("agentproof.status"), 1 << 4, agentSessionKey), "agent writes status");
+        assertFalse(_has(_textPart("agentproof.policy"), 1 << 4, agentSessionKey), "agent must NOT write policy");
+        assertFalse(_has(_textPart("agentproof.hook"), 1 << 4, agentSessionKey), "agent must NOT write hook");
     }
 
     // ------------------------------------------------------ the tamper attempt
 
-    /**
-     * Demo shot 10, first half. An operator — or a compromised agent process —
-     * tries to widen the policy using the key the agent actually holds.
-     */
     function test_AgentKeyCannotWidenItsOwnPolicy() public {
-        // expectRevert before prank, not after: the cheatcode call itself
-        // consumes a pending prank, so the reverting call would otherwise be
-        // made by this test contract and the assertion would pass for the
-        // wrong reason.
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                MockPermissionedRegistry.Unauthorised.selector,
-                bytes32(tokenId),
-                registry.ROLE_SET_POLICY_RECORD(),
-                agentSessionKey
-            )
-        );
+        vm.expectRevert(AgentSubnameRegistrar.NotOwner.selector);
         vm.prank(agentSessionKey);
-        registrar.setPolicyHash(LABEL, tokenId, WIDER_POLICY);
+        registrar.setPolicyHash(LABEL, WIDER_POLICY);
 
-        assertEq(
-            registry.text(tokenId, "agentproof.policy"), _hex32(POLICY_HASH), "the published policy must be untouched"
-        );
+        assertEq(resolver.text(node, "agentproof.policy"), _hex32(POLICY_HASH), "published policy untouched");
     }
 
-    /// @dev Demo shot 10, second half. The owner does the same thing and it works.
+    function test_AgentKeyCannotWritePolicyDirectly() public {
+        vm.expectRevert(abi.encodeWithSelector(MockPermissionedResolver.Unauthorised.selector, agentSessionKey));
+        vm.prank(agentSessionKey);
+        resolver.setText(node, "agentproof.policy", _hex32(WIDER_POLICY));
+
+        assertEq(resolver.text(node, "agentproof.policy"), _hex32(POLICY_HASH));
+    }
+
     function test_OwnerKeyCanRepointThePolicy() public {
         vm.prank(owner);
-        registrar.setPolicyHash(LABEL, tokenId, WIDER_POLICY);
+        registrar.setPolicyHash(LABEL, WIDER_POLICY);
 
-        assertEq(registry.text(tokenId, "agentproof.policy"), _hex32(WIDER_POLICY));
+        assertEq(resolver.text(node, "agentproof.policy"), _hex32(WIDER_POLICY));
     }
 
     function test_AnOutsiderCannotRepointThePolicy() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                MockPermissionedRegistry.Unauthorised.selector,
-                bytes32(tokenId),
-                registry.ROLE_SET_POLICY_RECORD(),
-                outsider
-            )
-        );
+        vm.expectRevert(AgentSubnameRegistrar.NotOwner.selector);
         vm.prank(outsider);
-        registrar.setPolicyHash(LABEL, tokenId, WIDER_POLICY);
+        registrar.setPolicyHash(LABEL, WIDER_POLICY);
     }
 
-    /**
-     * The agent's one permission, exercised. This matters as much as the
-     * refusals: a session key that can do nothing at all would be a simpler
-     * design and a weaker claim. The agent can take itself off the field, which
-     * is the action you want it to be able to take unilaterally.
-     */
     function test_AgentKeyMaySuspendItself() public {
         vm.prank(agentSessionKey);
-        registry.setTextAuthorised(tokenId, "agentproof.status", "suspended", agentSessionKey);
+        registrar.suspend(LABEL);
 
-        assertEq(registry.text(tokenId, "agentproof.status"), "suspended");
+        assertEq(resolver.text(node, "agentproof.status"), "suspended");
     }
 
-    function test_AgentKeyCannotRepointTheEnforcementHook() public {
-        address attackerHook = makeAddr("attackerHook");
-
-        vm.prank(agentSessionKey);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                MockPermissionedRegistry.Unauthorised.selector,
-                bytes32(tokenId),
-                registry.ROLE_SET_HOOK_RECORD(),
-                agentSessionKey
-            )
-        );
-        registry.setTextAuthorised(tokenId, "agentproof.hook", _hex20(attackerHook), agentSessionKey);
-
-        assertEq(registry.text(tokenId, "agentproof.hook"), _hex20(hook));
+    function test_AnOutsiderCannotSuspend() public {
+        vm.expectRevert(AgentSubnameRegistrar.NotSessionKey.selector);
+        vm.prank(outsider);
+        registrar.suspend(LABEL);
     }
 
     // ------------------------------------------------------------ registration
@@ -170,22 +122,30 @@ contract AgentSubnameRegistrarTest is Test {
     function test_AnAgentCannotRegisterItself() public {
         vm.expectRevert(AgentSubnameRegistrar.NotOwner.selector);
         vm.prank(agentSessionKey);
-        registrar.registerAgent("rogue", account, agentSessionKey, POLICY_HASH, hook, 365 days);
+        registrar.registerAgent("rogue", node, dns, account, agentSessionKey, POLICY_HASH, hook, 365 days);
     }
 
     function test_LabelCannotBeTakenTwice() public {
         vm.expectRevert(abi.encodeWithSelector(AgentSubnameRegistrar.LabelTaken.selector, LABEL));
         vm.prank(owner);
-        registrar.registerAgent(LABEL, account, agentSessionKey, POLICY_HASH, hook, 365 days);
+        registrar.registerAgent(LABEL, node, dns, account, agentSessionKey, POLICY_HASH, hook, 365 days);
     }
 
     function test_UnknownAgentIsRejected() public {
         vm.expectRevert(abi.encodeWithSelector(AgentSubnameRegistrar.UnknownAgent.selector, "ghost"));
         vm.prank(owner);
-        registrar.setPolicyHash("ghost", tokenId, WIDER_POLICY);
+        registrar.setPolicyHash("ghost", WIDER_POLICY);
     }
 
     // ---------------------------------------------------------------- helpers
+
+    function _textPart(string memory key) internal view returns (uint256) {
+        return uint256(keccak256(abi.encode(node, keccak256(bytes(key)))));
+    }
+
+    function _has(uint256 resource, uint256 bits, address who) internal view returns (bool) {
+        return (resolver.roles(resource, who) & bits) == bits;
+    }
 
     function _hex32(bytes32 value) internal pure returns (string memory) {
         return _hex(uint256(value), 32);

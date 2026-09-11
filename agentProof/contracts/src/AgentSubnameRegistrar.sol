@@ -1,39 +1,52 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {IPermissionedRegistry, IEnhancedAccessControl} from "./interfaces/IENSv2.sol";
+import {IPermissionedRegistry, IPermissionedResolver} from "./interfaces/IENSv2.sol";
+import {
+    ROLE_SET_SUBREGISTRY,
+    ROLE_SET_SUBREGISTRY_ADMIN,
+    ROLE_SET_RESOLVER,
+    ROLE_SET_RESOLVER_ADMIN,
+    ROLE_CAN_TRANSFER_ADMIN,
+    ROLE_SET_ADDR_ADMIN,
+    ROLE_SET_TEXT_ADMIN,
+    COIN_TYPE_ETH
+} from "./interfaces/IENSv2.sol";
 
 /**
  * @title AgentSubnameRegistrar
- * @notice Mints one ENSv2 subname per protected agent under `agentproof.eth`
- *         and grants Enhanced Access Control roles that encode AgentProof's
- *         trust model directly in the namespace.
+ * @notice Mints one ENSv2 subname per protected agent in our namespace
+ *         registry and wires record permissions that encode AgentProof's
+ *         trust model:
  *
- * @dev The whole thesis, expressed as ENS permissions:
- *
- *        holder                role                     resource            meaning
- *        ─────────────────────────────────────────────────────────────────────────
- *        owner (human/Ledger)  ROLE_SET_POLICY_RECORD   agent's name        only a human can repoint the policy
- *        agent session key     ROLE_SET_STATUS_RECORD   agent's name        the agent may suspend itself…
- *                                                                           …and can do nothing else
- *        this registrar        ROLE_REGISTRAR|ROLE_RENEW ROOT_RESOURCE      may mint and renew agent subnames
+ *        holder                record                  meaning
+ *        ─────────────────────────────────────────────────────────────────
+ *        owner (human/Ledger)  agentproof.policy/hook  only a human can repoint the policy
+ *        agent session key     agentproof.status       the agent may suspend itself…
+ *                                                      …and can do nothing else
  *
  *      An agent can act inside its namespace but cannot rewrite the
  *      namespace's rules. That is the same asymmetry the on-chain hook
  *      enforces over funds, expressed over identity.
  *
- *      ENSv2 contracts are beta and not final. Exact addresses used are pinned
- *      in deployments/ensv2-sepolia.json.
+ * @dev Canonical ENSv2 (Sepolia beta): names live in our UserRegistry proxy,
+ *      records live on our PermissionedResolver proxy, and every permission
+ *      is EAC-enforced there — not by modifiers here. The registrar is a
+ *      thin, owner-gated gatekeeper in the tutorial pattern
+ *      (docs.ens.domains/ensv2/tutorial-contract-developers).
+ *
+ *      `node` and `dnsName` are passed in from off-chain (cast namehash +
+ *      DNS encoding) so the contract never parses names on-chain.
  */
 contract AgentSubnameRegistrar {
-    /// @dev ENSv2 root-resource role bitmap positions.
-    uint256 public constant ROLE_REGISTRAR = 1 << 0;
-    uint256 public constant ROLE_RENEW = 1 << 16;
+    /// @dev Roles the agent-name owner receives (tutorial bitmap).
+    uint256 public constant REGISTRATION_ROLE_BITMAP =
+        ROLE_SET_SUBREGISTRY | ROLE_SET_SUBREGISTRY_ADMIN | ROLE_SET_RESOLVER | ROLE_SET_RESOLVER_ADMIN
+            | ROLE_CAN_TRANSFER_ADMIN;
 
-    /// @dev Per-name resource roles minted by this registrar.
-    uint256 public constant ROLE_SET_POLICY_RECORD = 1 << 32;
-    uint256 public constant ROLE_SET_STATUS_RECORD = 1 << 33;
-    uint256 public constant ROLE_SET_HOOK_RECORD = 1 << 34;
+    /// @dev Admin bitmap the deployer grants this registrar on the agent's
+    ///      node so it can delegate per-record roles.
+    uint256 public constant NODE_ADMIN_BITMAP = ROLE_SET_TEXT_ADMIN | ROLE_SET_ADDR_ADMIN;
 
     /// @dev Text record keys. Aligned with ENSIP-26 agent record conventions.
     string public constant KEY_POLICY = "agentproof.policy";
@@ -41,13 +54,14 @@ contract AgentSubnameRegistrar {
     string public constant KEY_STATUS = "agentproof.status";
 
     IPermissionedRegistry public immutable registry;
-    address public immutable resolver;
+    IPermissionedResolver public immutable resolver;
     address public owner;
 
     struct Agent {
         address account; // the agent's ERC-7579 smart account
         address sessionKey; // scoped key the agent process holds
         bytes32 policyHash; // keccak256 of the canonical policy JSON
+        bytes32 node; // namehash of label.parent
         uint64 registeredAt;
     }
 
@@ -55,9 +69,11 @@ contract AgentSubnameRegistrar {
 
     event AgentRegistered(string label, address indexed account, address indexed sessionKey, bytes32 policyHash);
     event PolicyRepointed(string label, bytes32 oldHash, bytes32 newHash);
+    event AgentSuspended(string label);
     event OwnerTransferred(address indexed from, address indexed to);
 
     error NotOwner();
+    error NotSessionKey();
     error LabelTaken(string label);
     error UnknownAgent(string label);
     error ZeroAddress();
@@ -67,21 +83,25 @@ contract AgentSubnameRegistrar {
         _;
     }
 
-    constructor(IPermissionedRegistry _registry, address _resolver) {
-        if (address(_registry) == address(0) || _resolver == address(0)) revert ZeroAddress();
+    constructor(IPermissionedRegistry _registry, IPermissionedResolver _resolver) {
+        if (address(_registry) == address(0) || address(_resolver) == address(0)) revert ZeroAddress();
         registry = _registry;
         resolver = _resolver;
         owner = msg.sender;
     }
 
     /**
-     * @notice Mint `label.agentproof.eth` for an agent and wire up its records
+     * @notice Mint `label` in our namespace for an agent and wire its records
      *         and roles in one transaction.
-     * @dev Deliberately owner-gated. An agent cannot register itself, because
-     *      self-registration is self-granted authority.
+     * @dev Requires the deployer to have granted this registrar
+     *      NODE_ADMIN_BITMAP on the agent's node first (via authorizeNameRoles),
+     *      plus REGISTRAR|RENEW on the namespace root. An agent cannot
+     *      register itself, because self-registration is self-granted authority.
      */
     function registerAgent(
         string calldata label,
+        bytes32 node,
+        bytes calldata dnsName,
         address account,
         address sessionKey,
         bytes32 policyHash,
@@ -91,24 +111,34 @@ contract AgentSubnameRegistrar {
         if (agents[label].account != address(0)) revert LabelTaken(label);
         if (account == address(0) || sessionKey == address(0)) revert ZeroAddress();
 
-        // Mint the subname. The registrar holds ROLE_REGISTRAR on ROOT_RESOURCE.
-        tokenId = registry.register(label, owner, resolver, duration);
+        tokenId = registry.register(
+            label, owner, address(0), address(resolver), REGISTRATION_ROLE_BITMAP, uint64(block.timestamp) + duration
+        );
 
-        bytes32 resource = _resource(tokenId);
+        // The asymmetry, enforced by the resolver's EAC.
+        resolver.authorizeTextRoles(dnsName, KEY_POLICY, owner, true);
+        resolver.authorizeTextRoles(dnsName, KEY_HOOK, owner, true);
+        resolver.authorizeTextRoles(dnsName, KEY_STATUS, sessionKey, true);
+        // The registrar keeps part-write so future repoints (owner) and
+        // suspensions (session key, via suspend()) keep working. It holds no
+        // ADMIN bits, so it cannot widen anyone's permissions — only write
+        // the three parts above and the address.
+        resolver.authorizeTextRoles(dnsName, KEY_POLICY, address(this), true);
+        resolver.authorizeTextRoles(dnsName, KEY_HOOK, address(this), true);
+        resolver.authorizeTextRoles(dnsName, KEY_STATUS, address(this), true);
+        resolver.authorizeAddrRoles(dnsName, COIN_TYPE_ETH, address(this), true);
 
-        registry.setAddr(tokenId, account);
-        registry.setText(tokenId, KEY_POLICY, _toHexString(policyHash));
-        registry.setText(tokenId, KEY_HOOK, _toHexString(uint256(uint160(hook)), 20));
-        registry.setText(tokenId, KEY_STATUS, "active");
-
-        // The asymmetry. Owner may repoint the policy; the agent may only
-        // suspend itself. Neither role is grantable by its holder.
-        IEnhancedAccessControl(address(registry)).grantRoles(resource, ROLE_SET_POLICY_RECORD, owner);
-        IEnhancedAccessControl(address(registry)).grantRoles(resource, ROLE_SET_HOOK_RECORD, owner);
-        IEnhancedAccessControl(address(registry)).grantRoles(resource, ROLE_SET_STATUS_RECORD, sessionKey);
+        resolver.setAddr(node, COIN_TYPE_ETH, abi.encodePacked(account));
+        resolver.setText(node, KEY_POLICY, _toHexString(policyHash));
+        resolver.setText(node, KEY_HOOK, _toHexString(uint256(uint160(hook)), 20));
+        resolver.setText(node, KEY_STATUS, "active");
 
         agents[label] = Agent({
-            account: account, sessionKey: sessionKey, policyHash: policyHash, registeredAt: uint64(block.timestamp)
+            account: account,
+            sessionKey: sessionKey,
+            policyHash: policyHash,
+            node: node,
+            registeredAt: uint64(block.timestamp)
         });
 
         emit AgentRegistered(label, account, sessionKey, policyHash);
@@ -116,20 +146,35 @@ contract AgentSubnameRegistrar {
 
     /**
      * @notice Repoint an agent's policy record. Owner only.
-     * @dev This is the function the demo's tamper scene calls with the agent's
-     *      key. It reverts at the EAC check inside the registry, not here —
-     *      the permission lives in ENS, not in a modifier we could forget.
+     * @dev The demo's tamper scene calls this with the agent's key. It
+     *      reverts here (NotOwner) — and a direct resolver.setText with the
+     *      agent key reverts at the resolver's EAC check instead. The
+     *      permission lives in ENS, not in a modifier we could forget.
      */
-    function setPolicyHash(string calldata label, uint256 tokenId, bytes32 newHash) external {
+    function setPolicyHash(string calldata label, bytes32 newHash) external {
         Agent storage a = agents[label];
         if (a.account == address(0)) revert UnknownAgent(label);
+        if (msg.sender != owner) revert NotOwner();
 
-        // Reverts unless msg.sender holds ROLE_SET_POLICY_RECORD on this name.
-        registry.setTextAuthorised(tokenId, KEY_POLICY, _toHexString(newHash), msg.sender);
+        resolver.setText(a.node, KEY_POLICY, _toHexString(newHash));
 
         bytes32 old = a.policyHash;
         a.policyHash = newHash;
         emit PolicyRepointed(label, old, newHash);
+    }
+
+    /**
+     * @notice Suspend the agent. The session key — and only the session key
+     *         besides the owner — may call this. It can halt itself; it
+     *         cannot repoint policy, hook, or address records.
+     */
+    function suspend(string calldata label) external {
+        Agent storage a = agents[label];
+        if (a.account == address(0)) revert UnknownAgent(label);
+        if (msg.sender != a.sessionKey && msg.sender != owner) revert NotSessionKey();
+
+        resolver.setText(a.node, KEY_STATUS, "suspended");
+        emit AgentSuspended(label);
     }
 
     function transferOwnership(address next) external onlyOwner {
@@ -139,10 +184,6 @@ contract AgentSubnameRegistrar {
     }
 
     // ---------------------------------------------------------------- helpers
-
-    function _resource(uint256 tokenId) internal pure returns (bytes32) {
-        return bytes32(tokenId);
-    }
 
     function _toHexString(bytes32 value) internal pure returns (string memory) {
         return _toHexString(uint256(value), 32);
