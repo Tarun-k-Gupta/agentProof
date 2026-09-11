@@ -13,9 +13,9 @@ dataSources:
     name: AgentPolicyHook
     network: sepolia
     source:
-      address: "0x0000000000000000000000000000000000000000" # from deployments/sepolia.json
+      address: "0xEbB1c3Ae1b502409E64DAA908bd7EDe9cf267E59" # from deployments/sepolia.json
       abi: AgentPolicyHook
-      startBlock: 0
+      startBlock: 11684190
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9

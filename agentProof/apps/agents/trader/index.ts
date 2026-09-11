@@ -13,7 +13,7 @@ import {
   type PolicyDocument,
   type PolicyResult,
 } from '@agentproof/sdk';
-import { LangGraphModel, ScriptedModel, type AgentModel, type PriceSignal } from '../shared/llm.ts';
+import { LangGraphModel, OpenRouterModel, ScriptedModel, type AgentModel, type PriceSignal } from '../shared/llm.ts';
 
 /**
  * The trader.
@@ -67,9 +67,11 @@ export async function runTrader(options: TraderOptions) {
 
   const model =
     options.model ??
-    (process.env.OPENAI_API_KEY
-      ? new LangGraphModel({ logger })
-      : new ScriptedModel([
+    (process.env.OPENROUTER_API_KEY
+      ? new OpenRouterModel({ logger })
+      : process.env.OPENAI_API_KEY
+        ? new LangGraphModel({ logger })
+        : new ScriptedModel([
           { reasoning: 'Range-bound. A small position is proportionate.', action: 'SWAP', amountUsdc: '80', confidence: 0.6 },
           {
             reasoning:

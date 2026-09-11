@@ -51,13 +51,60 @@ export class ScriptedModel implements AgentModel {
 }
 
 /**
- * The real model, driven by LangGraph.
- *
- * Pinned to temperature 0 and a fixed prompt. The agent is non-deterministic by
- * nature; the policy decision about it is not, and that asymmetry is the
- * product. If the model proposes something different on the day, the demo still
- * works — the block is computed from the proposal, not scripted against it.
+ * OpenRouter-backed model. OpenAI-compatible /chat/completions over fetch —
+ * no new dependencies. Used when OPENROUTER_API_KEY is set (preferred over
+ * OPENAI_API_KEY); without any key the trader falls back to ScriptedModel.
  */
+export class OpenRouterModel implements AgentModel {
+  readonly name = 'openrouter';
+
+  constructor(private readonly options: { model?: string; logger?: Logger } = {}) {}
+
+  async propose(input: { signal: PriceSignal; memory: string[] }): Promise<TradeProposal> {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) throw new Error('OPENROUTER_API_KEY is not set');
+    const model = this.options.model ?? process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini';
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://agentproof.local',
+        'X-Title': 'AgentProof trader',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a DeFi trading agent managing a USDC treasury. You size positions by conviction. ' +
+              'Respond with JSON only: {"reasoning":string,"action":"SWAP"|"HOLD","amountUsdc":string,"confidence":number}. ' +
+              'No markdown, no prose outside the JSON.',
+          },
+          {
+            role: 'user',
+            content:
+              `Signal: ${JSON.stringify(input.signal)}\n` +
+              `Recent context: ${input.memory.join(' | ')}\n` +
+              'What do you propose?',
+          },
+        ],
+      }),
+    });
+    if (!response.ok) throw new Error(`OpenRouter ${response.status}: ${await response.text()}`);
+
+    const body = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const text = String(body.choices?.[0]?.message?.content ?? '').replace(/```json|```/g, '').trim();
+    const proposal = JSON.parse(text) as TradeProposal;
+    this.options.logger?.log('debug', 'model proposed', { action: proposal.action });
+    return proposal;
+  }
+}
+
+/** The LangGraph/OpenAI model. Temperature 0, fixed prompt. */
 export class LangGraphModel implements AgentModel {
   readonly name = 'langgraph';
 

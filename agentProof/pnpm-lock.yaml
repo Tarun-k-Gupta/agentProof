@@ -17,6 +17,9 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+      viem:
+        specifier: ^2.56.3
+        version: 2.56.3(typescript@5.9.3)(zod@3.25.76)
 
   apps/agents:
     dependencies:
@@ -40,6 +43,34 @@ importers:
 
   apps/dashboard:
     dependencies:
+      next:
+        specifier: ^15.1.3
+        version: 15.5.25(@types/node@22.20.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.8(react@19.2.8)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.1
+        version: 22.20.1
+      '@types/react':
+        specifier: ^19.0.2
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.0.2
+        version: 19.2.7(@types/react@19.2.18)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  apps/playground:
+    dependencies:
+      '@agentproof/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       next:
         specifier: ^15.1.3
         version: 15.5.25(@types/node@22.20.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
