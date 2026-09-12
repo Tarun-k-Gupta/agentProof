@@ -81,6 +81,9 @@ export async function verifyRoute(
     reason: result.reason,
     violations: result.violations,
     policyRows: result.policyRows.map(serialisePolicyRow),
+    // Every policy's verdict, not just the one that fired — so a caller can see
+    // that four passed and one failed.
+    checks: result.checks,
     intent: serialiseIntent(result.intent),
     proof: result.proof,
     // Restated on every response so a consumer cannot mistake this for the
@@ -132,7 +135,13 @@ export async function spendRoute(ctx: RouteContext, account: string): Promise<un
 
 /** GET /v1/proofs — whatever the verifier actually produced. */
 export async function proofsRoute(ctx: RouteContext): Promise<unknown> {
-  return { proofs: ctx.proofs.all(), allProven: ctx.proofs.allProven };
+  return {
+    proofs: ctx.proofs.all(),
+    allProven: ctx.proofs.allProven,
+    // The negative control sits next to the proofs on purpose: a clean run on
+    // the broken spec means the checker is inert and every PROVEN is decoration.
+    negativeControl: ctx.proofs.negativeControl ?? null,
+  };
 }
 
 // ----------------------------------------------------------------- helpers

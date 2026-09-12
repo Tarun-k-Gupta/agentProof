@@ -425,7 +425,24 @@ export async function createApiServer(options: ServerOptions) {
     if (path === '/v1/internal/publish' && req.method === 'POST') {
       if (!requireInternalPublisher(req, res, options.adminToken)) return;
       const body = (await readJson(req)) as { type?: string; data?: unknown };
-      stream.publish({ type: (body.type as 'decision' | 'thought') ?? 'decision', data: body.data });
+      const allowed = ['decision', 'thought', 'approval', 'identity'] as const;
+      const type = (allowed as readonly string[]).includes(body.type ?? '')
+        ? (body.type as (typeof allowed)[number])
+        : 'decision';
+      stream.publish({ type, data: body.data });
+      await respondJson(res, 202, { published: true, clients: stream.clientCount });
+      return;
+    }
+
+    // Publishes an event to connected dashboards. Used by the demo runner and
+    // by agents that want their decisions visible; it stores nothing.
+    if (path === '/v1/publish' && req.method === 'POST') {
+      const body = (await readJson(req)) as { type?: string; data?: unknown };
+      const allowed = ['decision', 'thought', 'approval', 'identity'] as const;
+      const type = (allowed as readonly string[]).includes(body.type ?? '')
+        ? (body.type as (typeof allowed)[number])
+        : 'decision';
+      stream.publish({ type, data: body.data });
       await respondJson(res, 202, { published: true, clients: stream.clientCount });
       return;
     }

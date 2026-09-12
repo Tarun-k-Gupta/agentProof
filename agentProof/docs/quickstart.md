@@ -14,9 +14,27 @@ pnpm demo
 ```
 
 No keys, no RPC, no deployed contracts. The demo runs against `SimulatedAccount`,
-a faithful in-process model of the ERC-7579 account and the hook. Step 9 —
-bypassing the SDK — reverts for real, because the revert comes from the model's
-enforcement path rather than from a check we chose to skip.
+a faithful in-process model of the ERC-7579 account and the hook. The bypass step
+— signing directly, no SDK — reverts for real, because the revert comes from the
+model's enforcement path rather than from a check we chose to skip.
+
+### Watch it on the dashboard
+
+```bash
+pnpm api                          # terminal 1 — http://localhost:8402
+pnpm demo                         # terminal 2
+```
+
+With the API running, every step also streams to the dashboard: the agent's
+reasoning on the left, AgentProof's decision and per-policy checklist on the
+right, the daily-spend gauge, and a proof drawer (top-right "Formal
+verification") showing property status and the negative-control counterexample.
+The approval step pauses in the demo's terminal — approve there, and the
+dashboard card updates. Set `AGENTPROOF_AUTO_APPROVE=true` for a hands-free run,
+or `AGENTPROOF_DASHBOARD=off` to skip streaming.
+
+Until `pnpm verify:formal` has been run the drawer honestly shows `NOT_RUN` — it
+never claims a proof it does not have.
 
 ## Run the tests
 

@@ -47,6 +47,7 @@ export type { LedgerTransport } from './approval/index.ts';
 export { selectApprover, createLedgerTransport, LedgerUnavailableError } from './approval/ledger.ts';
 export type { LedgerOptions } from './approval/ledger.ts';
 export { ProofRegistry } from './proofs/ProofRegistry.ts';
+export type { NegativeControl } from './proofs/ProofRegistry.ts';
 export { HookEnforcer, PolicyBindingError } from './enforcement/HookEnforcer.ts';
 export { ConsoleLogger, silentLogger } from './utils/logger.ts';
 export { keccak256 } from './crypto/keccak.ts';
@@ -80,6 +81,7 @@ export type {
   IntentKind,
   NormalizedIntent,
   Policy,
+  PolicyCheck,
   PolicyDocument,
   PolicyEvaluation,
   PolicyResult,

@@ -92,6 +92,52 @@ describe('evaluation order', () => {
   });
 });
 
+describe('per-policy checklist', () => {
+  test('every policy gets a row even after one blocks', async () => {
+    const { policy, state, account } = setup();
+    const proof = await createAgentProof({ policy, state, enforcement: { executor: account } });
+    const guarded = await proof.protect();
+
+    // Oversized AND to an unknown recipient: the allowlist decides, but the
+    // checklist must still record what maxTransaction/dailySpend/etc. would say.
+    const result = await guarded.execute({
+      to: USDC,
+      data: encodeErc20Transfer(ATTACKER, usdc(9999)),
+      value: 0n,
+      chainId: 11155111,
+    });
+
+    assert.equal(result.decision, 'BLOCK');
+    assert.deepEqual(
+      result.checks.map((c) => c.policy),
+      ['allowlist', 'maxTransaction', 'minBalance', 'dailySpend', 'approvalThreshold'],
+    );
+    const byId = Object.fromEntries(result.checks.map((c) => [c.policy, c.decision]));
+    assert.equal(byId.allowlist, 'BLOCK');
+    assert.equal(byId.maxTransaction, 'BLOCK', 'a settled decision must not stop the checklist from evaluating');
+    // The short-circuit is preserved where it matters: only the deciding
+    // policy's violation is returned.
+    assert.equal(result.violations[0].policy, 'allowedRecipients');
+  });
+
+  test('a clean pass shows five ALLOW rows', async () => {
+    const { policy, state, account } = setup();
+    const proof = await createAgentProof({ policy, state, enforcement: { executor: account } });
+    const guarded = await proof.protect();
+
+    const result = await guarded.execute({
+      to: ROUTER,
+      data: encodeSwapExactIn({ recipient: ME, amountIn: usdc(80), tokenIn: USDC, tokenOut: WETH }),
+      value: 0n,
+      chainId: 11155111,
+    });
+
+    assert.equal(result.decision, 'ALLOW');
+    assert.equal(result.checks.length, 5);
+    assert.ok(result.checks.every((c) => c.decision === 'ALLOW'));
+  });
+});
+
 describe('human approval', () => {
   test('escalates at the threshold and executes when approved', async () => {
     const { policy, state, account } = setup();

@@ -6,10 +6,11 @@
 <title>AgentProof</title>
 <style>
   /* The brief pins this: minimal white, #0D9488 teal, split pane. The one place
-     the design spends anything is the enforcement column — the decision chips
-     and the daily gauge — because that is the thing the viewer is meant to
-     watch. The left column is deliberately quiet: it is what the agent thinks,
-     and the whole argument is that what the agent thinks is not what decides. */
+     the design spends anything is the enforcement column — the decision chips,
+     the daily gauge and the proof drawer — because that is the thing the viewer
+     is meant to watch. The left column is deliberately quiet: it is what the
+     agent thinks, and the whole argument is that what the agent thinks is not
+     what decides. */
   :root {
     --teal: #0d9488;
     --teal-dim: #ccfbf1;
@@ -19,6 +20,7 @@
     --block: #b91c1c;
     --hold: #b45309;
     --bg: #ffffff;
+    --panel: #f7faf9;
   }
   * { box-sizing: border-box; }
   body {
@@ -33,10 +35,20 @@
   }
   header h1 { margin: 0; font-size: 18px; font-weight: 620; letter-spacing: -0.01em; }
   header .claim { color: var(--muted); font-size: 14px; }
+  header .right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
   header .agent {
-    margin-left: auto; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: 12.5px; color: var(--teal);
   }
+  .verify-btn {
+    font: inherit; font-size: 12.5px; padding: 5px 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+  }
+  .verify-btn:hover { border-color: var(--teal); color: var(--teal); }
+  .verify-btn .dot { display: inline-block; width: 7px; height: 7px; border-radius: 999px; margin-right: 6px; vertical-align: middle; background: var(--muted); }
+  .verify-btn .dot.proven { background: var(--teal); }
+  .verify-btn .dot.pending { background: var(--hold); }
+
   main { display: grid; grid-template-columns: 1fr 1.25fr; min-height: calc(100vh - 130px); }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
   section { padding: 20px 28px; }
@@ -47,6 +59,18 @@
   .thought { border-left: 2px solid var(--line); padding: 2px 0 2px 14px; margin-bottom: 18px; }
   .thought p { margin: 0 0 6px; }
   .thought .meta { color: var(--muted); font-size: 12.5px; }
+
+  /* Verified identity, resolved from the name — not a local copy with a label. */
+  .identity {
+    border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;
+    background: var(--panel); font-size: 12.5px;
+  }
+  .identity .title { font-weight: 620; color: var(--ink); margin-bottom: 6px; }
+  .identity .title .ok { color: var(--teal); }
+  .identity .title .bad { color: var(--block); }
+  .identity dl { display: grid; grid-template-columns: 78px 1fr; gap: 2px 10px; margin: 0; }
+  .identity dt { color: var(--muted); }
+  .identity dd { margin: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; word-break: break-all; }
 
   .decision { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
   .decision.allow { border-left: 3px solid var(--teal); }
@@ -66,10 +90,11 @@
 
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   td { padding: 5px 0; border-top: 1px solid var(--line); vertical-align: top; }
-  td.name { color: var(--muted); width: 42%; }
-  td.verdict { text-align: right; font-variant-numeric: tabular-nums; }
+  td.name { color: var(--muted); width: 52%; }
+  td.verdict { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .pass { color: var(--teal); }
   .fail { color: var(--block); }
+  .hold { color: var(--hold); }
 
   .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
   .prov {
@@ -81,6 +106,7 @@
   .gauge { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
   .gauge > div { height: 100%; background: var(--teal); transition: width .4s ease; }
   @media (prefers-reduced-motion: reduce) { .gauge > div { transition: none; } }
+  .gauge > div.over { background: var(--block); }
   .gauge-labels {
     display: flex; justify-content: space-between; font-size: 12.5px;
     color: var(--muted); margin-bottom: 6px;
@@ -93,10 +119,59 @@
   .proof .PROVEN { color: var(--teal); }
   .proof .NOT_RUN, .proof .UNPROVEN { color: var(--hold); }
   .proof .COUNTEREXAMPLE { color: var(--block); }
+  .proof-line {
+    margin-top: 10px; font-size: 12.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px;
+  }
+  .proof-line:hover { border-color: var(--teal); }
+  .proof-line .status { font-weight: 620; }
+  .proof-line .PROVEN { color: var(--teal); }
+  .proof-line .NOT_RUN, .proof-line .UNPROVEN { color: var(--hold); }
+  .proof-line .COUNTEREXAMPLE { color: var(--block); }
+  .proof-line .chevron { color: var(--muted); }
+
+  /* The proof drawer. Slides in from the right; it is the shot that carries the
+     formal-verification claim, so it shows the whole story: which properties
+     verified, under which tool, and the counterexample the deliberately broken
+     spec produced (without which every PROVEN is decoration). */
+  .drawer-scrim {
+    position: fixed; inset: 0; background: rgba(24, 32, 31, 0.28);
+    opacity: 0; pointer-events: none; transition: opacity .2s ease; z-index: 40;
+  }
+  .drawer-scrim.open { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; top: 0; right: 0; height: 100%; width: min(460px, 92vw);
+    background: var(--bg); border-left: 1px solid var(--line); box-shadow: -12px 0 40px rgba(24,32,31,0.12);
+    transform: translateX(100%); transition: transform .24s ease; z-index: 41;
+    display: flex; flex-direction: column;
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer header { border-bottom: 1px solid var(--line); }
+  .drawer .body { padding: 20px 24px; overflow-y: auto; }
+  .drawer .close { font: inherit; border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 20px; line-height: 1; }
+  .prop {
+    border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;
+  }
+  .prop .name { font-weight: 620; font-size: 14px; }
+  .prop .status { font-weight: 640; font-size: 12px; letter-spacing: 0.03em; }
+  .prop .status.PROVEN { color: var(--teal); }
+  .prop .status.NOT_RUN, .prop .status.UNPROVEN { color: var(--hold); }
+  .prop .status.COUNTEREXAMPLE { color: var(--block); }
+  .prop .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .prop .formula { margin-top: 8px; font-size: 12px; }
+  .negctl {
+    margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; background: var(--panel);
+  }
+  .negctl .name { font-weight: 620; font-size: 13px; }
+  .negctl pre {
+    margin: 8px 0 0; padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 6px;
+    font-size: 11.5px; white-space: pre-wrap; word-break: break-word; color: var(--ink); overflow-x: auto;
+  }
+  .drawer .note { color: var(--muted); font-size: 12px; margin-top: 14px; }
 
   footer { padding: 14px 28px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }
   .empty { color: var(--muted); font-size: 13.5px; }
-  .approve-row { margin-top: 12px; display: flex; gap: 8px; font-size: 13px; color: var(--muted); }
+  .approve-row { margin-top: 12px; display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
   .approve-row button {
     font: inherit; min-height: 44px; padding: 8px 14px; border-radius: 6px; cursor: pointer;
     border: 1px solid var(--line); background: #fff; color: var(--ink);
@@ -118,6 +193,10 @@
       <input id="admin-token" name="token" type="password" autocomplete="current-password" placeholder="Admin token">
       <button type="submit">Unlock</button>
     </form>
+    <span class="right">
+      <button class="verify-btn" id="verify-btn"><span class="dot" id="verify-dot"></span>Formal verification</button>
+      <span class="agent" id="agent">connecting…</span>
+    </span>
   </header>
 
   <main>
@@ -129,6 +208,8 @@
     <section>
       <h2>What AgentProof did about it</h2>
       <div id="decisions" aria-live="polite"><p class="empty">No decisions yet.</p></div>
+      <div id="identity"></div>
+      <div id="decisions"><p class="empty">No decisions yet.</p></div>
 
       <div class="gauge-wrap">
         <div class="gauge-labels">
@@ -145,13 +226,24 @@
     the policy engine runs in the agent's process and the hook runs on the account.
   </footer>
 
+  <div class="drawer-scrim" id="drawer-scrim"></div>
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <header>
+      <h1 style="font-size:15px">Formal verification</h1>
+      <button class="close" id="drawer-close" aria-label="Close">&times;</button>
+    </header>
+    <div class="body" id="drawer-body"></div>
+  </aside>
+
 <script type="module">
 /**
  * The dashboard reads. It does not decide.
  *
- * Every number here comes from the API's free read routes. There is no path
- * from this page into a policy outcome, which is the answer to "what happens if
- * I close the dashboard": nothing changes.
+ * Every number here comes from the API's free read routes or from events the
+ * agent publishes about its own decisions. There is no path from this page into
+ * a policy outcome, which is the answer to "what happens if I close the
+ * dashboard": nothing changes. The one exception is the approval button, a
+ * separate POST guarded by an id the server issued.
  */
 const usd = (base) => {
   const n = BigInt(base ?? 0);
@@ -171,6 +263,35 @@ function textNode(tag, className, text) {
 
 function clearEmpty(container) {
   if (container.querySelector('.empty')) container.textContent = '';
+const POLICY_NAMES = {
+  allowlist: 'Allowlist — contract & recipient',
+  maxTransaction: 'Max transaction',
+  minBalance: 'Minimum balance reserve',
+  dailySpend: 'Daily spend',
+  approvalThreshold: 'Approval threshold',
+  unknownSelector: 'Calldata decodable',
+  allowedContracts: 'Allowlisted contract',
+  allowedRecipients: 'Allowlisted recipient',
+};
+
+function verdictCell(decision, provenance) {
+  if (decision === 'ALLOW') return `<span class="pass">pass</span>${prov(provenance)}`;
+  if (decision === 'REQUIRE_APPROVAL') return `<span class="hold">approval</span>`;
+  return `<span class="fail">fail</span>${prov(provenance)}`;
+}
+const prov = (p) => (p ? `<span class="prov">${p}</span>` : '');
+
+function renderChecks(checks) {
+  if (!Array.isArray(checks) || checks.length === 0) return '';
+  const rows = checks
+    .map(
+      (c) => `<tr>
+        <td class="name">${POLICY_NAMES[c.policy] ?? c.policy}</td>
+        <td class="verdict">${verdictCell(c.decision, c.provenance)}</td>
+      </tr>`,
+    )
+    .join('');
+  return `<table>${rows}</table>`;
 }
 
 function renderDecision(result) {
@@ -183,6 +304,42 @@ function renderDecision(result) {
     textNode('div', 'summary', result.intent?.summary ?? ''),
     textNode('div', 'reason', result.reason ?? ''),
   );
+
+  if (result.proof) {
+    node.append(
+      textNode(
+        'div',
+        'proof',
+        `invariant ${result.proof.property}: ${result.proof.status} (${result.proof.tool}, ${result.proof.solverTimeMs} ms)`,
+      ),
+    );
+  }
+
+  if (result.txHash) node.append(textNode('div', 'proof mono', `tx ${result.txHash}`));
+  const proofLine = result.proof
+    ? `<div class="proof-line" data-proof='${encodeURIComponent(JSON.stringify(result.proof))}'>
+         invariant ${result.proof.property}:
+         <span class="status ${result.proof.status}">${result.proof.status}</span>
+         <span class="mono">(${result.proof.tool})</span>
+         <span class="chevron">details ›</span>
+       </div>`
+    : '';
+
+  const tx = result.txHash
+    ? `<div class="proof-line mono">${
+        result.explorerUrl
+          ? `<a href="${result.explorerUrl}" target="_blank" rel="noopener">tx ${short(result.txHash)} ›</a>`
+          : `tx ${short(result.txHash)}`
+      }</div>`
+    : '';
+
+  node.innerHTML = `
+    <span class="chip ${kind}">${result.decision}</span>
+    <div class="summary">${result.intent?.summary ?? ''}</div>
+    <div class="reason">${result.reason ?? ''}</div>
+    ${renderChecks(result.checks)}
+    ${proofLine}
+    ${tx}`;
 
   if (result.policyRows?.length) {
     const table = document.createElement('table');
@@ -197,35 +354,69 @@ function renderDecision(result) {
     node.append(table);
   }
 
-  if (result.proof) {
-    node.append(
-      textNode(
-        'div',
-        'proof',
-        `invariant ${result.proof.property}: ${result.proof.status} (${result.proof.tool}, ${result.proof.solverTimeMs} ms)`,
-      ),
-    );
+  const proofEl = node.querySelector('.proof-line[data-proof]');
+  if (proofEl) {
+    proofEl.addEventListener('click', () => {
+      const proof = JSON.parse(decodeURIComponent(proofEl.dataset.proof));
+      openDrawer(proof.property);
+    });
   }
-
-  if (result.txHash) node.append(textNode('div', 'proof mono', `tx ${result.txHash}`));
 
   const container = el('decisions');
   clearEmpty(container);
   container.prepend(node);
+
+  applyGauge(result);
+}
+
+const short = (hex) => (typeof hex === 'string' && hex.length > 14 ? `${hex.slice(0, 8)}…${hex.slice(-6)}` : hex);
+
+function applyGauge(result) {
+  if (result.dailyLimit !== undefined) state.limit = BigInt(result.dailyLimit);
+  if (result.dailySpent !== undefined) {
+    state.spent = BigInt(result.dailySpent);
+  } else if (result.decision === 'ALLOW' && result.intent) {
+    state.spent += BigInt(result.intent.notionalUSDC ?? 0);
+  }
+  renderGauge();
 }
 
 function renderThought(entry) {
   const node = document.createElement('div');
   node.className = 'thought';
   node.append(textNode('p', '', entry.reasoning), textNode('p', 'meta', entry.proposal ?? ''));
+  node.innerHTML = `<p>${entry.reasoning ?? ''}</p><p class="meta">${entry.proposal ?? ''}</p>`;
   const container = el('reasoning');
   clearEmpty(container);
   container.prepend(node);
 }
 
+function renderIdentity(entry) {
+  let badge;
+  if (entry.matchesLocal === false) badge = '<span class="bad">binding mismatch</span>';
+  else if (entry.verified) badge = '<span class="ok">binding verified on-chain</span>';
+  else badge = '<span class="hold">local policy — not resolved on-chain in this run</span>';
+
+  const node = document.createElement('div');
+  node.className = 'identity';
+  node.innerHTML = `
+    <div class="title">${entry.name ?? 'agent'} — ${badge}</div>
+    <dl>
+      <dt>account</dt><dd>${entry.account ?? '—'}</dd>
+      <dt>policy</dt><dd>${entry.policyHash ?? '—'}</dd>
+      <dt>hook</dt><dd>${entry.hook ?? '—'}</dd>
+      <dt>status</dt><dd>${entry.status ?? '—'}</dd>
+      <dt>resolved</dt><dd>${entry.resolvedVia ?? '—'}</dd>
+    </dl>`;
+  el('identity').innerHTML = '';
+  el('identity').appendChild(node);
+}
+
 function renderGauge() {
-  const pct = state.limit > 0n ? Number((state.spent * 100n) / state.limit) : 0;
-  el('gauge-bar').style.width = `${Math.min(pct, 100)}%`;
+  const pct = state.limit > 0n ? Number((state.spent * 10000n) / state.limit) / 100 : 0;
+  const bar = el('gauge-bar');
+  bar.style.width = `${Math.min(pct, 100)}%`;
+  bar.classList.toggle('over', state.spent > state.limit && state.limit > 0n);
   el('gauge-text').textContent = `${usd(state.spent)} of ${usd(state.limit)}`;
 }
 
@@ -233,8 +424,19 @@ function renderGauge() {
  * The one control on this page, and it is narrow on purpose: it resolves an
  * approval the policy engine already escalated, by an id the server issued. It
  * cannot create a request and it cannot approve anything that was not asked.
+ * When `interactive` is false the request is being resolved in the agent's own
+ * terminal, so the card shows status rather than buttons.
  */
 function renderApproval(request) {
+  const existing = document.querySelector(`.decision.approval[data-id="${cssEscape(request.id)}"]`);
+
+  if (existing && request.state && request.state !== 'pending') {
+    const row = existing.querySelector('.approve-row');
+    if (row) row.textContent = request.state === 'approved' ? 'Approved' : 'Declined';
+    return;
+  }
+  if (existing) return;
+
   const node = document.createElement('div');
   node.className = 'decision approval';
   node.append(
@@ -251,6 +453,21 @@ function renderApproval(request) {
   decline.dataset.approve = 'no';
   row.append(approve, decline);
   node.append(row);
+  node.dataset.id = request.id;
+
+  const control =
+    request.interactive === false
+      ? `<div class="approve-row">Waiting for the operator in the agent's terminal…</div>`
+      : `<div class="approve-row">
+           <button data-approve="yes">Approve</button>
+           <button data-approve="no">Decline</button>
+         </div>`;
+
+  node.innerHTML = `
+    <span class="chip approval">APPROVAL NEEDED</span>
+    <div class="summary">${request.intent?.summary ?? ''}</div>
+    <div class="reason">${request.reason ?? ''}</div>
+    ${control}`;
 
   node.querySelectorAll('button').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -291,6 +508,87 @@ async function login(token) {
   return response.ok;
 }
 
+const cssEscape = (s) => String(s).replace(/["\\]/g, '\\$&');
+
+// ------------------------------------------------------------------- drawer
+
+let proofData = { proofs: [], allProven: false, negativeControl: null };
+
+const FORMULAS = {
+  MAX_TRANSFER: 'outflowᵢ ≤ maxTransaction, for every i',
+  DAILY_SPEND: 'Σ(outflow within one UTC day) ≤ dailyLimit',
+};
+
+function drawerContent(focusProperty) {
+  const proofs = proofData.proofs ?? [];
+  if (proofs.length === 0) {
+    return `<p class="empty">No proof artifacts loaded. Run <span class="mono">pnpm verify:formal</span> to
+      produce <span class="mono">proofs/*.json</span>. Until then the SDK reports NOT_RUN — it never
+      claims a proof it does not have.</p>`;
+  }
+
+  const cards = proofs
+    .map((p) => {
+      const focused = focusProperty && p.property === focusProperty ? ' style="border-color:var(--teal)"' : '';
+      return `<div class="prop"${focused}>
+        <div><span class="name">${p.property}</span> &nbsp;
+          <span class="status ${p.status}">${p.status}</span></div>
+        <div class="meta">${p.tool}${p.solverTimeMs ? ` · ${(p.solverTimeMs / 1000).toFixed(1)}s solver time` : ''} · ${p.artifactPath ?? ''}</div>
+        <div class="formula mono">${FORMULAS[p.property] ?? ''}</div>
+        ${p.counterexample ? `<pre>${escapeHtml(p.counterexample)}</pre>` : ''}
+      </div>`;
+    })
+    .join('');
+
+  const nc = proofData.negativeControl;
+  const ncBlock = nc
+    ? `<div class="negctl">
+         <div class="name">Negative control — ${nc.contract}</div>
+         <div class="meta">${
+           nc.counterexampleProduced
+             ? 'The deliberately broken spec was rejected, so the checker is really running.'
+             : '⚠ The broken spec verified cleanly. The checker is inert and every PROVEN above is decoration.'
+         }</div>
+         ${nc.counterexample ? `<pre>${escapeHtml(nc.counterexample)}</pre>` : ''}
+       </div>`
+    : '';
+
+  const verdict = proofData.allProven
+    ? '<p class="note">Every checked property verified, and the negative control was rejected.</p>'
+    : '<p class="note">A proof only proves the specification we wrote, under the model checked.</p>';
+
+  return cards + ncBlock + verdict;
+}
+
+function openDrawer(focusProperty) {
+  el('drawer-body').innerHTML = drawerContent(focusProperty);
+  el('drawer').classList.add('open');
+  el('drawer').setAttribute('aria-hidden', 'false');
+  el('drawer-scrim').classList.add('open');
+}
+function closeDrawer() {
+  el('drawer').classList.remove('open');
+  el('drawer').setAttribute('aria-hidden', 'true');
+  el('drawer-scrim').classList.remove('open');
+}
+el('verify-btn').addEventListener('click', () => openDrawer());
+el('drawer-close').addEventListener('click', closeDrawer);
+el('drawer-scrim').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+
+const escapeHtml = (s) =>
+  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function paintVerifyDot() {
+  const dot = el('verify-dot');
+  const proofs = proofData.proofs ?? [];
+  dot.className = 'dot';
+  if (proofs.length === 0 || proofs.every((p) => p.status === 'NOT_RUN')) return; // neutral: verifier not run
+  dot.classList.add(proofData.allProven ? 'proven' : 'pending');
+}
+
+// --------------------------------------------------------------------- boot
+
 async function boot() {
   try {
     const health = await (await fetch('/health')).json();
@@ -309,6 +607,13 @@ async function boot() {
   } catch {
     el('agent').textContent = 'API unreachable';
   }
+
+  try {
+    proofData = await (await fetch('/v1/proofs')).json();
+  } catch {
+    /* leave the default NOT_RUN view */
+  }
+  paintVerifyDot();
 
   // Live decisions arrive over SSE. The stream carries results only; there is
   // no channel back.
@@ -329,8 +634,10 @@ async function boot() {
         renderGauge();
       }
     });
+    stream.addEventListener('decision', (event) => renderDecision(JSON.parse(event.data)));
     stream.addEventListener('thought', (event) => renderThought(JSON.parse(event.data)));
     stream.addEventListener('approval', (event) => renderApproval(JSON.parse(event.data)));
+    stream.addEventListener('identity', (event) => renderIdentity(JSON.parse(event.data)));
   } catch {
     /* no stream configured; the static view above is still correct */
   }
