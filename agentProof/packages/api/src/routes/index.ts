@@ -1,13 +1,14 @@
 import type { ServerResponse } from 'node:http';
 import type {
   AgentProof,
+  PolicyDocument,
   PolicyEngine,
   PolicyResult,
   ProofRegistry,
   ResolvedPolicy,
   StateProvider,
 } from '@agentproof/sdk';
-import { utcDay } from '@agentproof/sdk';
+import { resolvePolicy, utcDay } from '@agentproof/sdk';
 import { respondJson } from '../x402/middleware.ts';
 
 export interface RouteContext {
@@ -142,6 +143,79 @@ export async function proofsRoute(ctx: RouteContext): Promise<unknown> {
     // the broken spec means the checker is inert and every PROVEN is decoration.
     negativeControl: ctx.proofs.negativeControl ?? null,
   };
+}
+
+/**
+ * PUT /v1/policy — the developer-facing limit editor.
+ *
+ * Only the `policies` block is patchable here: `maxTransaction`, `dailySpend`,
+ * `approvalThreshold`, `minBalance`, `allowedContracts`, `allowedRecipients`.
+ * The agent's name, asset and enforcement addresses are identity, not limits,
+ * and changing them is a deliberate redeploy — not a form field.
+ *
+ * Validation is not reimplemented here. `resolvePolicy` is the one function in
+ * the codebase that decides whether a policy document is coherent, and this
+ * route calls it on the candidate document exactly like startup does — the
+ * same "dailySpend below maxTransaction" and "empty allowlist" refusals apply
+ * to a form submission as to a hand-edited file.
+ */
+export interface PolicyPatch {
+  maxTransaction?: string;
+  dailySpend?: string;
+  approvalThreshold?: string;
+  minBalance?: string;
+  allowedContracts?: string[];
+  allowedRecipients?: string[];
+}
+
+const AMOUNT_KEYS = ['maxTransaction', 'dailySpend', 'approvalThreshold', 'minBalance'] as const;
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+export function applyPolicyPatch(
+  ctx: RouteContext,
+  body: unknown,
+): { document: PolicyDocument; resolved: ResolvedPolicy } {
+  if (typeof body !== 'object' || body === null) throw new BadRequestError('body must be an object');
+  const patch = body as PolicyPatch;
+
+  const nextPolicies = { ...ctx.policy.document.policies };
+
+  for (const key of AMOUNT_KEYS) {
+    const value = patch[key];
+    if (value === undefined) continue;
+    // Base units, decimal digits only — the same shape resolvePolicy enforces
+    // and the same shape the policy file is written in. Converting display
+    // units ("100" USDC) is the dashboard's job, not the wire contract's.
+    if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+      throw new BadRequestError(`policies.${key} must be a base-unit integer string, e.g. "100000000" for 100 USDC`);
+    }
+    nextPolicies[key] = value;
+  }
+
+  for (const key of ['allowedContracts', 'allowedRecipients'] as const) {
+    const value = patch[key];
+    if (value === undefined) continue;
+    if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || !ADDRESS_RE.test(entry))) {
+      throw new BadRequestError(`policies.${key} must be an array of 20-byte addresses`);
+    }
+    nextPolicies[key] = value.map((entry) => entry.toLowerCase()) as `0x${string}`[];
+  }
+
+  const document: PolicyDocument = { ...ctx.policy.document, policies: nextPolicies };
+
+  let resolved: ResolvedPolicy;
+  try {
+    resolved = resolvePolicy(document);
+  } catch (error) {
+    // Anything resolvePolicy rejects here is a property of the patch: the
+    // document it started from was already valid, or this process would not
+    // have booted. Not just PolicyValidationError — parseBaseUnitPolicyAmount
+    // throws its own plain Error for a display-unit mix-up, and that is a
+    // client mistake too, not a server fault.
+    throw new BadRequestError(error instanceof Error ? error.message : String(error));
+  }
+
+  return { document, resolved };
 }
 
 // ----------------------------------------------------------------- helpers

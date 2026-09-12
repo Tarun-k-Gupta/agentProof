@@ -87,6 +87,33 @@ export interface Health {
   dashboardSession: boolean;
 }
 
+/** The `policies` block of an `agent.policy.json` — amounts in base units. */
+export interface PolicyLimits {
+  maxTransaction: string;
+  dailySpend: string;
+  approvalThreshold: string;
+  minBalance: string;
+  allowedContracts: string[];
+  allowedRecipients: string[];
+}
+
+/**
+ * A patch to PUT /v1/policy. Every field optional — only what is sent changes;
+ * everything else stays whatever the server currently has.
+ */
+export type PolicyPatch = Partial<PolicyLimits>;
+
+export interface PolicyUpdateResult {
+  ok: true;
+  policyHash: string;
+  policy: PolicyLimits;
+  /** false when the server has no file path to write back to (in-memory only). */
+  persisted: boolean;
+  policyPath: string | null;
+  /** null when no ENS resolver is configured for this session. */
+  ens: { resolvedVia: string; matchesLocal: boolean; publishedPolicyHash: string } | null;
+}
+
 export interface Spend {
   account: string;
   dayUtc: number;

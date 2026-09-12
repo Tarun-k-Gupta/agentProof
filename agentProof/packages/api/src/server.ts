@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
@@ -23,6 +23,7 @@ import {
   UniswapPoolProvider,
   type PolicyDocument,
   type PolicyResult,
+  type ResolvedPolicy,
   toPublicAuditRecord,
 } from '@agentproof/sdk';
 import { readRuntimeConfig, tokenFingerprint, type RuntimeConfig } from './config.ts';
@@ -31,6 +32,7 @@ import { createX402Gate, respondJson } from './x402/middleware.ts';
 import { HcsAuditTrail, createHederaSubmitter, type HcsSubmitter } from './x402/hcsAudit.ts';
 import { ReplayGuard } from './x402/replay.ts';
 import {
+  applyPolicyPatch,
   decodeRoute,
   policyRoute,
   proofsRoute,
@@ -63,6 +65,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 export interface ServerOptions {
   policy: PolicyDocument;
+  /** Where `policy` was read from, if anywhere. Enables PUT /v1/policy to persist edits. */
+  policyPath?: string;
   port?: number;
   x402?: {
     enabled: boolean;
@@ -89,7 +93,9 @@ export interface ServerOptions {
 
 export async function createApiServer(options: ServerOptions) {
   const logger = new ConsoleLogger('info');
-  const policy = resolvePolicy(options.policy);
+  // `policy` is reassigned by PUT /v1/policy, which is why it is `let` rather
+  // than the `const` every other boot-time value gets — see buildEngine below.
+  let policy = resolvePolicy(options.policy);
   const proofs = await ProofRegistry.load(join(here, '../../../proofs'));
 
   const mode = options.mode ?? 'simulation';
@@ -123,23 +129,28 @@ export async function createApiServer(options: ServerOptions) {
     : undefined;
   const minTvlUsd = options.uniswapGraph?.minTvlUsd ?? 50_000;
 
-  const engine = new PolicyEngine({
-    decoders: createDefaultRegistry(),
-    decoderContext: { account: policy.account, trackedAsset: policy.asset, decimals: policy.decimals },
-    proofs: proofs.asMap(),
-    // minBalance needs a live balance read. Without an RPC the API has no way
-    // to know the account's balance, and evaluating the policy against a
-    // default of zero would block every action for a reason that is not true.
-    // We drop the policy and say so in the response instead of guessing.
-    policies: [
-      new AllowlistPolicy(policy.allowedContracts, policy.allowedRecipients),
-      new MaxTransactionPolicy(policy.maxTransaction),
-      ...(canReadBalances || mode === 'production' ? [new MinBalancePolicy(policy.minBalance)] : []),
-      new DailySpendPolicy(policy.dailySpend),
-      ...(pools ? [new PoolLiquidityPolicy(minTvlUsd)] : []),
-      new ApprovalThresholdPolicy(policy.approvalThreshold),
-    ],
-  });
+  // Extracted so PUT /v1/policy can rebuild the engine against a new
+  // ResolvedPolicy without duplicating which policies get instantiated.
+  function buildEngine(p: ResolvedPolicy): PolicyEngine {
+    return new PolicyEngine({
+      decoders: createDefaultRegistry(),
+      decoderContext: { account: p.account, trackedAsset: p.asset, decimals: p.decimals },
+      proofs: proofs.asMap(),
+      // minBalance needs a live balance read. Without an RPC the API has no way
+      // to know the account's balance, and evaluating the policy against a
+      // default of zero would block every action for a reason that is not true.
+      // We drop the policy and say so in the response instead of guessing.
+      policies: [
+        new AllowlistPolicy(p.allowedContracts, p.allowedRecipients),
+        new MaxTransactionPolicy(p.maxTransaction),
+        ...(canReadBalances || mode === 'production' ? [new MinBalancePolicy(p.minBalance)] : []),
+        new DailySpendPolicy(p.dailySpend),
+        ...(pools ? [new PoolLiquidityPolicy(minTvlUsd)] : []),
+        new ApprovalThresholdPolicy(p.approvalThreshold),
+      ],
+    });
+  }
+  let engine = buildEngine(policy);
 
   const stream = new EventStream();
   const approver = new DashboardApprover((request) =>
@@ -222,7 +233,9 @@ export async function createApiServer(options: ServerOptions) {
           matchesLocal: publishedHash.toLowerCase() === policy.hash.toLowerCase(),
           hook,
           status,
-          document: options.policy,
+          // The live document, not the one the process booted with — a policy
+          // edited through PUT /v1/policy must show up here immediately.
+          document: policy.document,
         };
       };
     }
@@ -459,6 +472,54 @@ export async function createApiServer(options: ServerOptions) {
       return;
     }
 
+    // The developer-facing limit editor. Same permission tier as approving a
+    // spend — an owner session — because a standing change to the limits is at
+    // least as consequential as a single approval.
+    if (path === '/v1/policy' && req.method === 'PUT') {
+      if (!requireDashboardSession(req, res, options.adminToken)) return;
+      const body = await readJson(req);
+      const { document, resolved } = applyPolicyPatch(context, body);
+
+      let persisted = false;
+      if (options.policyPath) {
+        await writeFile(options.policyPath, `${JSON.stringify(document, null, 2)}\n`, 'utf8');
+        persisted = true;
+      } else {
+        logger.log('warn', 'policy updated in memory only: no policyPath configured (set AGENTPROOF_POLICY)');
+      }
+
+      policy = resolved;
+      engine = buildEngine(policy);
+      context.policy = policy;
+      context.engine = engine;
+      logger.log('info', 'policy updated via dashboard', { policyHash: policy.hash, persisted });
+
+      // Surfaces the same three-way binding the SDK checks at agent startup: a
+      // form submission that quietly widens a limit without ENS or the hook
+      // agreeing is exactly the tamper scenario the rest of this codebase
+      // exists to refuse. We cannot check the hook from here without a second
+      // ABI decode of `config(address)`; ENS, when configured, we already have.
+      const ens = context.resolvePolicyByName
+        ? ((await context.resolvePolicyByName(policy.document.agent).catch(() => null)) as {
+            resolvedVia: string;
+            matchesLocal: boolean;
+            publishedPolicyHash: string;
+          } | null)
+        : null;
+
+      await respondJson(res, 200, {
+        ok: true,
+        policyHash: policy.hash,
+        policy: document.policies,
+        persisted,
+        policyPath: options.policyPath ?? null,
+        ens: ens
+          ? { resolvedVia: ens.resolvedVia, matchesLocal: ens.matchesLocal, publishedPolicyHash: ens.publishedPolicyHash }
+          : null,
+      });
+      return;
+    }
+
     await respondJson(res, 404, { error: `No route for ${req.method} ${path}` });
   }
 
@@ -507,10 +568,11 @@ function required<T>(value: T | undefined, message: string): T {
   return value;
 }
 
-export async function createApiServerFromEnv(policy: PolicyDocument, env = process.env) {
+export async function createApiServerFromEnv(policy: PolicyDocument, env = process.env, policyPath?: string) {
   const config: RuntimeConfig = readRuntimeConfig(env, policy);
   return createApiServer({
     policy,
+    policyPath,
     port: Number(env.PORT ?? 8402),
     mode: config.mode,
     adminToken: config.adminToken,
