@@ -2,10 +2,18 @@
   "_comment": "Verify the facilitator's /supported endpoint returns hedera-testnet with scheme=exact before relying on any of this. The API refuses to start if it does not.",
   "network": "hedera-testnet",
   "facilitator": "blocky402",
-  "facilitatorUrl": "",
-  "serviceAccountId": "0.0.0",
-  "usdcTokenId": "",
-  "hcsAuditTopicId": "",
-  "verificationServiceUrl": "",
-  "pricing": { "verifyUsdc": "0.01", "decodeUsdc": "0.005" }
+  "facilitatorUrl": "https://api.testnet.blocky402.com",
+  "serviceAccountId": "0.0.10447814",
+  "usdcTokenId": "HBAR 0.0.0 (dust pricing under shared policy; see README)",
+  "hcsAuditTopicId": "0.0.10483603",
+  "verificationServiceUrl": "http://localhost:8402",
+  "pricing": {
+    "verifyHbar": "0.00000090",
+    "decodeHbar": "0.00000040"
+  },
+  "servicePayTo": "0.0.10492857",
+  "settlements": [
+    "0.0.7162784@1789188459.814401011",
+    "0.0.7162784@1789188460.374641418"
+  ]
 }
