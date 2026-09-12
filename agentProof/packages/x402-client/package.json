@@ -11,7 +11,8 @@
     "@agentproof/sdk": "workspace:*"
   },
   "optionalDependencies": {
-    "@hashgraph/sdk": "^2.62.0"
+    "@hashgraph/sdk": "^2.62.0",
+    "@x402/hedera": "^2.25.0"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

@@ -1,4 +1,6 @@
 import type { Action, Address, HttpClient, Logger } from '@agentproof/sdk';
+
+export { hederaSigner } from './hedera.ts';
 import { x402PaymentAction } from '@agentproof/sdk';
 
 /**

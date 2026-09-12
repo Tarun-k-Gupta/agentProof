@@ -394,6 +394,19 @@ export function AttackBench() {
               </div>
             ) : null}
 
+            {verdict.settlement?.transactionId ? (
+              <p className="bench__paid">
+                This check was paid for. Settled on Hedera as{' '}
+                <a
+                  href={`https://hashscan.io/testnet/transaction/${verdict.settlement.transactionId}`}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="ap-mono"
+                >
+                  {verdict.settlement.transactionId} ↗
+                </a>
+              </p>
+            ) : null}
             {verdict.enforcement ? (
               <p className="ap-dim bench__advisory">
                 This page only gives advice. The real limit lives on-chain at{' '}
@@ -579,6 +592,14 @@ export function AttackBench() {
         }
         @media (prefers-reduced-motion: reduce) {
           .paused { animation: none; }
+        }
+        .bench__paid {
+          margin-top: 12px;
+          font-size: var(--text-small);
+          color: var(--ink-2);
+          border-left: 2px solid var(--teal-line);
+          padding-left: 12px;
+          overflow-wrap: anywhere;
         }
         .bench__error {
           color: var(--red);

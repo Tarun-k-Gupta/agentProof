@@ -1,5 +1,5 @@
 import type { Logger } from '@agentproof/sdk';
-import type { PaymentRequirements, PaymentSigner } from '@agentproof/x402-client';
+import type { PaymentRequirements, PaymentSigner } from './index.ts';
 
 /**
  * Real x402 v2 Hedera signer, built on the official @x402/hedera

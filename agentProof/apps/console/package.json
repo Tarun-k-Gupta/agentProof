@@ -14,12 +14,16 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "@agentproof/design": "workspace:*",
-    "@agentproof/sdk": "workspace:*"
+    "@agentproof/sdk": "workspace:*",
+    "@agentproof/x402-client": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "typescript": "^5.7.2"
+  },
+  "optionalDependencies": {
+    "@x402/hedera": "^2.25.0"
   }
 }
