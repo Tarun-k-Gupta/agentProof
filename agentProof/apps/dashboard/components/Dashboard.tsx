@@ -10,6 +10,7 @@ import { PolicyRows } from './PolicyRows';
 import { IntentCard } from './IntentCard';
 import { SpendGauge } from './SpendGauge';
 import { ProofDrawer } from './ProofDrawer';
+import { PolicySettings } from './PolicySettings';
 import { Approvals } from './Approvals';
 import { LoginGate } from './LoginGate';
 
@@ -21,6 +22,7 @@ export function Dashboard() {
   const [spend, setSpend] = useState<Spend>();
   const [spendError, setSpendError] = useState<string>();
   const [proofOpen, setProofOpen] = useState(false);
+  const [policyOpen, setPolicyOpen] = useState(false);
   const [selected, setSelected] = useState<Verdict>();
 
   const authed = health ? !health.dashboardAuth || health.dashboardSession : false;
@@ -73,7 +75,12 @@ export function Dashboard() {
 
   return (
     <div className="shell">
-      <Header health={health} connection={stream.connection} onOpenProofs={() => setProofOpen(true)} />
+      <Header
+        health={health}
+        connection={stream.connection}
+        onOpenProofs={() => setProofOpen(true)}
+        onOpenPolicy={() => setPolicyOpen(true)}
+      />
 
       <main>
         <div className="pane pane-left">
@@ -128,6 +135,16 @@ export function Dashboard() {
       </footer>
 
       <ProofDrawer open={proofOpen} onClose={() => setProofOpen(false)} />
+      <PolicySettings
+        open={policyOpen}
+        onClose={() => {
+          setPolicyOpen(false);
+          // A saved edit changes the policy hash and, sometimes, the daily
+          // limit the gauge is drawn against — both live in health/spend.
+          void refreshHealth();
+        }}
+        agent={health.agent}
+      />
 
       <style jsx>{`
         .shell {
@@ -286,10 +303,12 @@ function Header({
   health,
   connection,
   onOpenProofs,
+  onOpenPolicy,
 }: {
   health: Health;
   connection: string;
   onOpenProofs: () => void;
+  onOpenPolicy: () => void;
 }) {
   const proven = health.proofs.filter((p) => p.status === 'PROVEN').length;
 
@@ -310,6 +329,9 @@ function Header({
         <span className={`mode mode-${health.mode}`}>{health.mode}</span>
         <button type="button" className="proofs" onClick={onOpenProofs}>
           Proofs {proven}/{health.proofs.length}
+        </button>
+        <button type="button" className="proofs" onClick={onOpenPolicy}>
+          Policy
         </button>
         <span className={`conn conn-${connection}`} title={`event stream: ${connection}`}>
           <span className="conn-dot" aria-hidden="true" />

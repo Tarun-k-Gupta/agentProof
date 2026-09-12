@@ -1,5 +1,8 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createApiServer } from '../src/server.ts';
 import { encodeErc20Transfer, encodeSwapExactIn, usdc, type PolicyDocument } from '@agentproof/sdk';
 
@@ -222,5 +225,100 @@ describe('dashboard stream', () => {
 
   test('an approval without an id is a 400', async () => {
     assert.equal((await post('/v1/approve', { approved: true })).status, 400);
+  });
+});
+
+describe('PUT /v1/policy', () => {
+  // Its own server, isolated from the shared one above: this route writes to
+  // disk and mutates in-process state, and it is gated behind the same owner
+  // session as approving a spend — neither belongs on the read-only fixture
+  // every other describe block shares.
+  const ADMIN_TOKEN = 'test-policy-editor-token';
+  let policyApi: Awaited<ReturnType<typeof createApiServer>>;
+  let policyBase: string;
+  let policyPath: string;
+
+  before(async () => {
+    policyPath = join(tmpdir(), `agentproof-policy-test-${process.pid}-${Date.now()}.json`);
+    await writeFile(policyPath, JSON.stringify(POLICY, null, 2));
+    policyApi = await createApiServer({ policy: POLICY, port: 0, adminToken: ADMIN_TOKEN, policyPath });
+    await policyApi.listen(0);
+    const address = policyApi.server.address();
+    policyBase = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 8402}`;
+  });
+
+  after(async () => {
+    await policyApi.close();
+    await rm(policyPath, { force: true });
+  });
+
+  const put = (path: string, body: unknown, headers: Record<string, string> = {}) =>
+    fetch(`${policyBase}${path}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    });
+
+  async function login(): Promise<string> {
+    const res = await fetch(`${policyBase}/v1/dashboard/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: ADMIN_TOKEN }),
+    });
+    return res.headers.get('set-cookie')!.split(';')[0];
+  }
+
+  test('requires an owner session, same as approve', async () => {
+    assert.equal((await put('/v1/policy', { maxTransaction: '50000000' })).status, 401);
+  });
+
+  test('updates the running policy, writes the file and reports the new hash', async () => {
+    const cookie = await login();
+    const before = await (await fetch(`${policyBase}/health`)).json();
+
+    const res = await put(
+      '/v1/policy',
+      { maxTransaction: '250000000', dailySpend: '900000000' },
+      { Cookie: cookie },
+    );
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.policy.maxTransaction, '250000000');
+    assert.equal(body.policy.dailySpend, '900000000');
+    assert.equal(body.persisted, true);
+    assert.notEqual(body.policyHash, before.policyHash);
+
+    const onDisk = JSON.parse(await readFile(policyPath, 'utf8'));
+    assert.equal(onDisk.policies.maxTransaction, '250000000');
+
+    const after = await (await fetch(`${policyBase}/health`)).json();
+    assert.equal(after.policyHash, body.policyHash, 'the running engine must reflect the edit immediately');
+  });
+
+  test('rejects an incoherent patch with 400 and leaves the file untouched', async () => {
+    const cookie = await login();
+    const onDiskBefore = await readFile(policyPath, 'utf8');
+
+    // dailySpend below maxTransaction is the same refusal resolvePolicy gives
+    // a hand-edited file — this route must not reimplement a looser rule.
+    const res = await put('/v1/policy', { dailySpend: '1000000' }, { Cookie: cookie });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /below maxTransaction/);
+    assert.equal(await readFile(policyPath, 'utf8'), onDiskBefore);
+  });
+
+  test('rejects a display-unit amount rather than silently misreading it', async () => {
+    const cookie = await login();
+    const res = await put('/v1/policy', { maxTransaction: '100' }, { Cookie: cookie });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /display-unit/);
+  });
+
+  test('rejects a malformed address in an allowlist patch', async () => {
+    const cookie = await login();
+    const res = await put('/v1/policy', { allowedRecipients: ['not-an-address'] }, { Cookie: cookie });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /20-byte address/);
   });
 });

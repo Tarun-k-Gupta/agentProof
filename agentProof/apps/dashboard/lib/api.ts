@@ -1,4 +1,4 @@
-import type { Health, ProofReference, Spend, Verdict } from './types';
+import type { Health, PolicyPatch, PolicyUpdateResult, ProofReference, Spend, Verdict } from './types';
 
 /**
  * Client for the Verification API.
@@ -53,6 +53,14 @@ export const api = {
   spend: (account: string) => request<Spend>(`/v1/spend/${account}`),
 
   policy: (name: string) => request<{ name: string; policy: unknown; policyHash: string }>(`/v1/policy/${encodeURIComponent(name)}`),
+
+  /**
+   * The settings-drawer's only write. Same owner-session permission as
+   * approving a spend — see LoginGate. Server-validated with the same
+   * resolvePolicy rules a hand-edited agent.policy.json goes through.
+   */
+  updatePolicy: (patch: PolicyPatch) =>
+    request<PolicyUpdateResult>('/v1/policy', { method: 'PUT', body: JSON.stringify(patch) }),
 
   login: (token: string) =>
     request<{ ok: true }>('/v1/dashboard/login', { method: 'POST', body: JSON.stringify({ token }) }),
