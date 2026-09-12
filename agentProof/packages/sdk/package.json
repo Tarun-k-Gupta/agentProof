@@ -1,6 +1,6 @@
 {
   "name": "@agentproof/sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Verifiable safety runtime for autonomous agents: policy evaluation off-chain, enforcement at the wallet boundary.",
   "license": "MIT",
   "type": "module",
@@ -31,6 +31,8 @@
     "test": "node --import tsx --test tests/unit/*.test.ts",
     "typecheck": "tsc --project tsconfig.json",
     "build": "tsc --project tsconfig.build.json",
+    "prepack": "node scripts/publish-manifest.mjs",
+    "postpack": "node scripts/publish-manifest.mjs restore",
     "prepublishOnly": "pnpm build"
   },
   "dependencies": {},
@@ -43,31 +45,7 @@
     "tsx": "^4.19.2"
   },
   "publishConfig": {
-    "access": "public",
-    "main": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "exports": {
-      ".": {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.js"
-      },
-      "./calldata": {
-        "types": "./dist/testing/calldata.d.ts",
-        "import": "./dist/testing/calldata.js"
-      },
-      "./decode/uniswap": {
-        "types": "./dist/decode/uniswapV4.d.ts",
-        "import": "./dist/decode/uniswapV4.js"
-      },
-      "./testing": {
-        "types": "./dist/testing/SimulatedAccount.d.ts",
-        "import": "./dist/testing/SimulatedAccount.js"
-      },
-      "./adapters": {
-        "types": "./dist/adapters/index.d.ts",
-        "import": "./dist/adapters/index.js"
-      }
-    }
+    "access": "public"
   },
   "peerDependenciesMeta": {
     "viem": {
