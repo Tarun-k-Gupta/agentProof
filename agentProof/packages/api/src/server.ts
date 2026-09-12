@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -153,8 +154,27 @@ export async function createApiServer(options: ServerOptions) {
   let engine = buildEngine(policy);
 
   const stream = new EventStream();
-  const approver = new DashboardApprover((request) =>
-    stream.publish({ type: 'approval', data: { id: request.id, reason: request.reason, intent: request.intent } }),
+  /**
+   * How long an escalated action waits for a human before it is refused.
+   *
+   * Published to the client so the countdown it renders is the real deadline
+   * rather than a decorative one. 60s is long enough for an operator to read
+   * the intent and decide, short enough that watching it expire is part of a
+   * demo rather than an interruption to one.
+   */
+  const APPROVAL_TIMEOUT_MS = Number(process.env.AGENTPROOF_APPROVAL_TIMEOUT_MS ?? 60_000);
+  const approver = new DashboardApprover(
+    (request) =>
+      stream.publish({
+        type: 'approval',
+        data: {
+          id: request.id,
+          reason: request.reason,
+          intent: request.intent,
+          expiresAt: request.expiresAt,
+        },
+      }),
+    APPROVAL_TIMEOUT_MS,
   );
 
   const context: RouteContext = {
@@ -379,6 +399,35 @@ export async function createApiServer(options: ServerOptions) {
         const outcome = await verifyRoute(context, body as { agent?: string; action?: Record<string, unknown> });
         stream.publish({ type: 'decision', data: outcome.body });
         evaluated = outcome.result;
+
+        // An escalation that nobody can answer is not an escalation. Returning
+        // REQUIRE_APPROVAL and moving on would leave the caller holding a
+        // verdict with no way to resolve it, so the request is opened here and
+        // awaited: the call stays open until a human answers on /v1/approve, or
+        // until DashboardApprover's timeout denies it. Silence is not consent,
+        // so a timeout is a denial and the caller learns that in the response.
+        if (outcome.result.decision === 'REQUIRE_APPROVAL') {
+          const approval = await approver.request({
+            id: randomUUID(),
+            intent: outcome.result.intent,
+            reason: outcome.result.reason ?? 'above the approval threshold',
+            threshold: context.policy.approvalThreshold,
+            expiresAt: Date.now() + APPROVAL_TIMEOUT_MS,
+          });
+          const resolved = {
+            ...(outcome.body as Record<string, unknown>),
+            approval: { requested: true, approved: approval.approved, by: approval.by },
+            decision: approval.approved ? 'ALLOW' : 'BLOCK',
+            reason: approval.approved
+              ? `approved by ${approval.by}`
+              : approval.by.endsWith(':timeout')
+                ? 'nobody approved it in time — silence is not consent'
+                : `declined by ${approval.by}`,
+          };
+          stream.publish({ type: 'decision', data: resolved });
+          return resolved;
+        }
+
         return outcome.body;
       };
       // Captured out of band because the gate hands the wire body — which has

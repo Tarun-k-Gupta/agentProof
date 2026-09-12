@@ -56,8 +56,17 @@ export interface ProofReference {
   counterexample?: string;
 }
 
+/** Present only when the action escalated and a human (or a timeout) answered. */
+export interface ApprovalOutcomeWire {
+  requested: true;
+  approved: boolean;
+  /** 'dashboard:owner' | 'dashboard:timeout' | … */
+  by: string;
+}
+
 export interface Verdict {
   decision: Decision;
+  approval?: ApprovalOutcomeWire;
   reason?: string;
   violations: PolicyViolation[];
   policyRows: PolicyRow[];

@@ -137,7 +137,7 @@ In words:
 | Verification API | `packages/api/` — `node:http`, no framework | x402-gated `POST /v1/verify`, streams runs to the dashboard |
 | Payment client | `packages/x402-client/` | Pays for verification, policy-checks its own payment first (the loop closes) |
 | Agents | `apps/agents/trader`, `apps/agents/researcher` | Demo consumers of the SDK |
-| Dashboard | `apps/dashboard/` (Next.js) | Read-only control plane + approval UI + proof drawer |
+| Console | `apps/console/` (Next.js) | Architecture map, live policy bench, operator view, deployed-artifact evidence |
 | Subgraph | `subgraphs/agent-history/` | Indexes `SpendRecorded` events |
 | Recipes | `recipes/verify-before-you-swap.ts` | Gateway integration that imports nothing internal |
 
@@ -314,14 +314,16 @@ pnpm contracts:test    # 32 Foundry tests, incl. Gate G1 against a real 7579 acc
 pnpm verify:formal     # SMTChecker: MAX_TRANSFER + DAILY_SPEND, plus the negative control
 ```
 
-The demo runs against `SimulatedAccount`, an in-process model of the account and hook. For the dashboard, run the API and UI side by side:
+The demo runs against `SimulatedAccount`, an in-process model of the account and hook. For the web console, run the API and UI side by side:
 
 ```bash
 AGENTPROOF_ADMIN_TOKEN=… pnpm api    # :8402  the Verification API
-pnpm dashboard                        # :3000  the Next.js control plane
+pnpm console                          # :3000  the Next.js console
 ```
 
-The dashboard proxies the API through a Next rewrite (same-origin cookie, no CORS negotiation). The approval step pauses in the demo terminal — approve there and the dashboard card updates. `AGENTPROOF_AUTO_APPROVE=true` for hands-free, `AGENTPROOF_DASHBOARD=off` to skip streaming.
+The console proxies the API through a Next rewrite (same-origin cookie, no CORS negotiation), except `/v1/verify`, which has its own route handler: an escalated action holds that request open until a human answers, and the rewrite proxy gives up at 30 seconds.
+
+An action at the approval threshold pauses in the browser — approve or decline it on **Try it yourself**, or watch the deadline expire, which refuses it. `AGENTPROOF_APPROVAL_TIMEOUT_MS` sets that deadline (default 60s). `AGENTPROOF_AUTO_APPROVE=true` for a hands-free terminal run, `AGENTPROOF_DASHBOARD=off` to skip streaming.
 
 Against real Sepolia (identical steps — same policy file, same bypass, same revert):
 
@@ -379,7 +381,7 @@ packages/sdk/          @agentproof/sdk — the product. Zero runtime dependencie
   tests/fixtures/      real Sepolia calldata, each entry naming its tx hash
 packages/api/          the Verification API, x402-gated, node:http, no framework
 packages/x402-client/  payment client that policy-checks its own payments
-apps/dashboard/        Next.js split-pane control plane. Reads only, bar approval.
+apps/console/          Next.js console: what it does, try it, watch it run, receipts.
 apps/agents/           trader (LangGraph) and researcher (x402)
 contracts/             AgentPolicyHook, PolicyLib, AgentSubnameRegistrar
   formal/              PolicySpec (proves) + PolicySpecBroken (must not)

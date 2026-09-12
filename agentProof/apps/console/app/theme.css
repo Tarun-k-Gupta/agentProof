@@ -1,0 +1,220 @@
+/*
+ * Console theme.
+ *
+ * Loaded after shared-design/tokens.css and overrides its values, so every
+ * existing .ap-* component inherits the new palette without being rewritten.
+ *
+ * Three fixes from the audit:
+ *
+ * 1. One gray family. The shared tokens pair warm paper (#fafaf7) with cool
+ *    navy ink (#0a1428) — two temperatures fighting. Everything here is tinted
+ *    toward the teal accent, so neutrals and accent read as one system.
+ *
+ * 2. One accent. Teal is the brand and an ALLOW. Amber and red keep their
+ *    learned security meanings but are desaturated so they stop shouting. Gold
+ *    is gone as a decorative accent — a second "premium" color was doing
+ *    nothing that teal was not already doing.
+ *
+ * 3. Real display presence. The old scale topped out at 30px with 14.5px body,
+ *    which is why every page read as a settings screen. Display now runs to a
+ *    fluid 68px with tight negative tracking.
+ */
+
+:root {
+  /* Ink — slate tinted green, same family as the accent */
+  --ink: #0b1618;
+  --ink-2: #33474a;
+  --ink-3: #647b7e;
+  --ink-4: #93a6a8;
+
+  /* Surfaces — cool neutral, not warm paper */
+  --bg: #f6f8f8;
+  --bg-2: #eef2f2;
+  --bg-3: #e2e9e8;
+  --card: #ffffff;
+  --line: #dfe7e6;
+  --line-2: #c8d5d3;
+
+  /* Teal — the single accent */
+  --teal: #0d7d6c;
+  --teal-strong: #0a6155;
+  --teal-ink: #0a6155;
+  --teal-bg: #e6f4f1;
+  --teal-line: #9fd9cc;
+  --teal-glow: #43cfb8;
+
+  /* Amber — a decision a human has to make. Desaturated. */
+  --amber: #9a6212;
+  --amber-bg: #fbf5e9;
+  --amber-line: #e6d3a9;
+
+  /* Red — a refusal. Desaturated. */
+  --red: #a83232;
+  --red-bg: #fbefef;
+  --red-line: #eec4c4;
+
+  /* Gold is demoted to an alias of amber: one accent, not two. */
+  --gold: var(--amber);
+  --gold-bright: var(--amber);
+  --gold-bg: var(--amber-bg);
+  --gold-line: var(--amber-line);
+
+  /* Type scale — editorial contrast. Display is fluid. */
+  --text-display: clamp(34px, 4.4vw, 68px);
+  --text-h1: clamp(26px, 2.4vw, 38px);
+  --text-h2: 20px;
+  --text-h3: 16px;
+  --text-body: 15px;
+  --text-small: 13.5px;
+  --text-caption: 11.5px;
+
+  --tracking-tight: -0.035em;
+  --tracking-wide: 0.1em;
+  --leading-tight: 1.04;
+  --leading-body: 1.65;
+
+  /* Shape — varied, not one radius on everything */
+  --radius-lg: 20px;
+  --radius: 14px;
+  --radius-sm: 9px;
+
+  /* Shadows carry the surface hue rather than neutral black */
+  --shadow-1: 0 1px 2px rgba(11, 40, 38, 0.04), 0 2px 6px rgba(11, 40, 38, 0.05);
+  --shadow-2: 0 2px 6px rgba(11, 40, 38, 0.05), 0 14px 34px -10px rgba(11, 40, 38, 0.16);
+  --shadow-teal: 0 10px 30px -12px rgba(13, 125, 108, 0.42);
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-1: 140ms;
+  --dur-2: 280ms;
+
+  /* One z-scale instead of arbitrary 9999s */
+  --z-rail: 10;
+  --z-sticky: 20;
+  --z-scrim: 40;
+  --z-sheet: 50;
+}
+
+[data-theme='dark'] {
+  --ink: #e4eceb;
+  --ink-2: #adc0be;
+  --ink-3: #7e9491;
+  --ink-4: #5b706e;
+
+  --bg: #060b0c;
+  --bg-2: #0b1214;
+  --bg-3: #121c1e;
+  --card: #0c1517;
+  --line: #1a2628;
+  --line-2: #2a3a3c;
+
+  --teal: #2fd1b8;
+  --teal-strong: #5ee0cb;
+  --teal-ink: #5ee0cb;
+  --teal-bg: #06302b;
+  --teal-line: #10534a;
+  --teal-glow: #5ee0cb;
+
+  --amber: #e0ae55;
+  --amber-bg: #241a07;
+  --amber-line: #5f4715;
+
+  --red: #e98080;
+  --red-bg: #2a1212;
+  --red-line: #6e2626;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.4), 0 16px 40px -12px rgba(0, 0, 0, 0.7);
+  --shadow-teal: 0 10px 30px -12px rgba(47, 209, 184, 0.3);
+}
+
+/* ---- base overrides ---------------------------------------------------- */
+
+body {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Grain. A fixed, non-interactive noise layer at very low opacity — enough to
+ * stop large flat surfaces reading as untextured vector fills, not enough to
+ * be consciously visible.
+ */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.032;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+.ap-mono,
+.ap-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus is an accessibility requirement, not a style choice. */
+:where(a, button, input, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* Press feedback on every control — the old UI had hover but no active state. */
+button:not(:disabled):active,
+.ap-btn:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: var(--z-sheet);
+  background: var(--teal);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 0 0 var(--radius-sm) 0;
+  font-weight: 600;
+}
+
+.skip:focus {
+  left: 0;
+}
+
+/* Visually hidden but available to screen readers. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
