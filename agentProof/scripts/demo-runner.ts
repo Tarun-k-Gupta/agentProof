@@ -217,6 +217,16 @@ async function main(): Promise<void> {
   const account: Address = policy.enforcement.account;
   const router: Address = policy.policies.allowedContracts[0];
   const asset: Address = policy.asset.address;
+  /**
+   * Where a swap's output lands.
+   *
+   * Not the enforcement account: that address is not on its own recipient
+   * allowlist, so routing there fails the allowlist check before any of the
+   * limits are reached — every swap below came back "not an allowlisted
+   * recipient", including the ones meant to demonstrate the per-transaction
+   * ceiling and the approval threshold.
+   */
+  const payTo: Address = (policy.policies.allowedRecipients?.[0] as Address) ?? account;
   const dailyLimit = parseBaseUnitPolicyAmount(policy.policies.dailySpend);
   const canonicalHash = policyHash(policy);
 
@@ -380,7 +390,7 @@ async function main(): Promise<void> {
     'swap 80 USDC → WETH via the Universal Router',
     {
       to: router,
-      data: encodeSwapExactIn({ recipient: account, amountIn: usdc(80), tokenIn: asset, tokenOut: WETH }),
+      data: encodeSwapExactIn({ recipient: payTo, amountIn: usdc(80), tokenIn: asset, tokenOut: WETH }),
       value: 0n,
       chainId: policy.chainId,
     },
@@ -393,7 +403,7 @@ async function main(): Promise<void> {
     'swap 250 USDC → WETH via the Universal Router',
     {
       to: router,
-      data: encodeSwapExactIn({ recipient: account, amountIn: usdc(250), tokenIn: asset, tokenOut: WETH }),
+      data: encodeSwapExactIn({ recipient: payTo, amountIn: usdc(250), tokenIn: asset, tokenOut: WETH }),
       value: 0n,
       chainId: policy.chainId,
     },
@@ -408,7 +418,7 @@ async function main(): Promise<void> {
     {
       to: router,
       data: encodeSwapExactOut({
-        recipient: account,
+        recipient: payTo,
         amountOut: 1n,
         amountInMaximum: usdc(250),
         tokenIn: asset,
@@ -440,7 +450,7 @@ async function main(): Promise<void> {
     'swap 100 USDC → WETH via the Universal Router',
     {
       to: router,
-      data: encodeSwapExactIn({ recipient: account, amountIn: usdc(100), tokenIn: asset, tokenOut: WETH }),
+      data: encodeSwapExactIn({ recipient: payTo, amountIn: usdc(100), tokenIn: asset, tokenOut: WETH }),
       value: 0n,
       chainId: policy.chainId,
     },
@@ -468,7 +478,7 @@ async function main(): Promise<void> {
   for (let i = 0; i < 14; i++) {
     const result = await guarded.execute({
       to: router,
-      data: encodeSwapExactIn({ recipient: account, amountIn: usdc(40), tokenIn: asset, tokenOut: WETH }),
+      data: encodeSwapExactIn({ recipient: payTo, amountIn: usdc(40), tokenIn: asset, tokenOut: WETH }),
       value: 0n,
       chainId: policy.chainId,
     });

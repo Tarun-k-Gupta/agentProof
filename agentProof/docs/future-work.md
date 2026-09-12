@@ -128,6 +128,13 @@ Two ways out, neither free:
 Until then, replacing a policy means deploying a new account: new address, new
 subgraph start block, new ENS registration.
 
+Worth separating from a bug this masked: nothing in the demo or the console
+actually needed a wider policy. Both were routing swap output to the
+enforcement account, which is not on its own recipient allowlist, so every swap
+failed the allowlist before reaching the limit it was meant to exercise. That
+was a caller bug, fixed in both. The hook's immovability is a real constraint;
+it was not the reason anything was failing.
+
 ---
 
 ### The replay guard is per-process
