@@ -16,7 +16,8 @@
   "files": [
     "dist",
     "src",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "keywords": [
     "ai-agents",
@@ -49,6 +50,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
+      },
+      "./calldata": {
+        "types": "./dist/testing/calldata.d.ts",
+        "import": "./dist/testing/calldata.js"
       },
       "./decode/uniswap": {
         "types": "./dist/decode/uniswapV4.d.ts",
