@@ -1,0 +1,396 @@
+openapi: 3.1.0
+info:
+  title: AgentProof Verification API
+  version: 0.1.0
+  description: |-
+    Advisory policy decisions for autonomous agents. Send an EVM action,
+    get back ALLOW, BLOCK, or REQUIRE_APPROVAL with reasons, per-policy
+    rows, and the decoded intent — computed by the same engine the SDK runs.
+    Advisory only: enforcement is the ERC-7579 hook on the account, whose
+    address is restated in every verdict.
+  contact:
+    name: AgentProof
+servers:
+  - url: http://localhost:8402
+    description: Local development
+security: []
+paths:
+  /health:
+    get:
+      summary: Service health and deployment info
+      operationId: getHealth
+      responses:
+        '200':
+          description: Health report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /openapi.yaml:
+    get:
+      summary: This OpenAPI document
+      operationId: getSpec
+      responses:
+        '200':
+          description: YAML spec
+          content:
+            text/yaml:
+              schema:
+                type: string
+  /v1/verify:
+    post:
+      summary: Full policy decision for one action (x402-gated when enabled)
+      operationId: verifyAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent:
+                  type: string
+                  example: trader.agentproof.eth
+                action:
+                  $ref: '#/components/schemas/Action'
+      responses:
+        '200':
+          description: Verdict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verdict'
+        '400':
+          description: Malformed action
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '402':
+          description: Payment required (x402)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentChallenge'
+  /v1/decode:
+    post:
+      summary: Calldata to normalized intent, no state required (x402-gated when enabled)
+      operationId: decodeAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Action'
+      responses:
+        '200':
+          description: Decoded intent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  intent:
+                    $ref: '#/components/schemas/Intent'
+        '402':
+          description: Payment required (x402)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentChallenge'
+  /v1/policy/{name}:
+    get:
+      summary: Live policy for an agent name, resolved through ENS when configured
+      operationId: getPolicy
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          example: trader.agentproof.eth
+      responses:
+        '200':
+          description: Policy document and hash
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  policy:
+                    type: object
+                  policyHash:
+                    type: string
+  /v1/spend/{account}:
+    get:
+      summary: Daily spend with Graph/chain reconciliation
+      operationId: getSpend
+      parameters:
+        - name: account
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^0x[0-9a-fA-F]{40}$'
+      responses:
+        '200':
+          description: Spend report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  account:
+                    type: string
+                  dayUtc:
+                    type: integer
+                  spentGraph:
+                    type: string
+                  spentOnchain:
+                    type: string
+                    nullable: true
+                  reconciled:
+                    type: boolean
+                    nullable: true
+                  limit:
+                    type: string
+                  remaining:
+                    type: string
+  /v1/proofs:
+    get:
+      summary: Current formal-verification artifacts
+      operationId: getProofs
+      responses:
+        '200':
+          description: Proof status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proofs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Proof'
+                  allProven:
+                    type: boolean
+  /v1/stream:
+    get:
+      summary: Server-sent events (decision, thought, approval); owner session when auth is on
+      operationId: streamEvents
+      responses:
+        '200':
+          description: text/event-stream of named events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /v1/approve:
+    post:
+      summary: Settle a pending human approval (owner session when auth is on)
+      operationId: settleApproval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+                approved:
+                  type: boolean
+      responses:
+        '200':
+          description: Settlement result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settled:
+                    type: boolean
+                  error:
+                    type: string
+  /v1/dashboard/login:
+    post:
+      summary: Establish a dashboard session from the admin token
+      operationId: dashboardLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+      responses:
+        '200':
+          description: Logged in (sets HttpOnly session cookie)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+components:
+  schemas:
+    Action:
+      type: object
+      required: [to]
+      properties:
+        to:
+          type: string
+          description: 20-byte target address
+          example: 0x3a9d48ab9751398bbfa63ad67599bb04e4bdf98b
+        data:
+          type: string
+          description: 0x-prefixed calldata
+        value:
+          type: string
+          description: Integer string of wei
+          default: '0'
+        chainId:
+          type: integer
+          default: 11155111
+    Intent:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [TRANSFER, APPROVE, SWAP, X402_PAYMENT, NATIVE_TRANSFER, UNKNOWN]
+        target:
+          type: string
+        selector:
+          type: string
+        counterparty:
+          type: string
+        nativeValue:
+          type: string
+        notionalUSDC:
+          type: string
+        summary:
+          type: string
+        outflow:
+          type: array
+          items:
+            type: object
+            properties:
+              asset:
+                type: string
+              amount:
+                type: string
+              provenance:
+                type: string
+                enum: [DECLARED, DECODED, MEASURED]
+    Violation:
+      type: object
+      properties:
+        policy:
+          type: string
+        limit:
+          type: string
+        observed:
+          type: string
+        provenance:
+          type: string
+        message:
+          type: string
+    Proof:
+      type: object
+      properties:
+        property:
+          type: string
+        status:
+          type: string
+          enum: [PROVEN, UNPROVEN, COUNTEREXAMPLE, NOT_RUN]
+        tool:
+          type: string
+        solverTimeMs:
+          type: number
+        artifactPath:
+          type: string
+    Verdict:
+      type: object
+      properties:
+        decision:
+          type: string
+          enum: [ALLOW, BLOCK, REQUIRE_APPROVAL]
+        reason:
+          type: string
+        violations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Violation'
+        policyRows:
+          type: array
+          items:
+            type: object
+        intent:
+          $ref: '#/components/schemas/Intent'
+        proof:
+          $ref: '#/components/schemas/Proof'
+        enforcement:
+          type: object
+          properties:
+            advisory:
+              type: boolean
+            note:
+              type: string
+            hook:
+              type: string
+            account:
+              type: string
+            mode:
+              type: string
+            unevaluatedPolicies:
+              type: array
+              items:
+                type: object
+    Health:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        mode:
+          type: string
+          enum: [simulation, production]
+        policyHash:
+          type: string
+        agent:
+          type: string
+        account:
+          type: string
+        hook:
+          type: string
+        proofs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Proof'
+        x402:
+          type: boolean
+        dashboardAuth:
+          type: boolean
+        dashboardSession:
+          type: boolean
+    PaymentChallenge:
+      type: object
+      properties:
+        x402Version:
+          type: integer
+        error:
+          type: string
+        accepts:
+          type: array
+          items:
+            type: object
+    Error:
+      type: object
+      properties:
+        error:
+          type: string

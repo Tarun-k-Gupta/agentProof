@@ -338,6 +338,13 @@ export async function createApiServer(options: ServerOptions) {
       return;
     }
 
+    if (path === '/openapi.yaml') {
+      const spec = await readFile(join(here, '../public/openapi.yaml'), 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/yaml; charset=utf-8' });
+      res.end(spec);
+      return;
+    }
+
     if (path === '/v1/dashboard/login' && req.method === 'POST') {
       const body = (await readJson(req)) as { token?: string };
       if (!options.adminToken) {
