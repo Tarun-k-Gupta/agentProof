@@ -1,28 +1,33 @@
 /**
- * Installs AgentPolicyHook on the live account with the final policy hash.
+ * Installs AgentPolicyHook on the live account, carrying the hash of the
+ * current agent.policy.json.
  *
  * The hook carries keccak256(canonical agent.policy.json), which covers the
  * account address itself — so it cannot be part of the counterfactual
  * initCode and is installed here, afterwards, via a UserOp signed by the
  * session key (the on-chain validator accepts it; the point is the hook).
  *
+ * Idempotent owner-update path: if a hook is already installed it is
+ * uninstalled first, then the new config goes in. Policy evolution is a
+ * first-class flow, not a redeploy.
+ *
  *   set -a; source .env; set +a; pnpm tsx scripts/install-hook.ts
  *
  * Requires: SEPOLIA_RPC_URL, BUNDLER_URL, AGENT_SESSION_KEY,
- * SMART_ACCOUNT_ADDRESS, AGENT_POLICY_HASH.
+ * SMART_ACCOUNT_ADDRESS. Reads limits + targets from agent.policy.json.
  */
+import { readFile } from 'node:fs/promises';
 import { encodeAbiParameters, encodeFunctionData, parseAbi, toFunctionSelector } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
   BundlerExecutor,
   ENTRY_POINT_V07,
   JsonRpcChainReader,
+  policyHash,
   type Address,
   type Hex,
+  type PolicyDocument,
 } from '../packages/sdk/src/index.ts';
-
-const USDC = '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238' as Address;
-const ROUTER = '0x3a9d48ab9751398bbfa63ad67599bb04e4bdf98b' as Address;
 
 function required(name: string): string {
   const value = process.env[name];
@@ -33,9 +38,20 @@ function required(name: string): string {
 const rpcUrl = required('SEPOLIA_RPC_URL');
 const bundlerUrl = required('BUNDLER_URL');
 const account = required('SMART_ACCOUNT_ADDRESS').toLowerCase() as Address;
-const hook = (process.env.AGENT_POLICY_HOOK_ADDRESS ?? '0xEbB1c3Ae1b502409E64DAA908bd7EDe9cf267E59') as Address;
-const policyHash = required('AGENT_POLICY_HASH') as Hex;
 const sessionKey = required('AGENT_SESSION_KEY') as Hex;
+
+const policy = JSON.parse(await readFile(new URL('../agent.policy.json', import.meta.url), 'utf8')) as PolicyDocument;
+const hash = policyHash(policy);
+const hook = policy.enforcement.hook as Address;
+if (/^0x0{40}$/i.test(hook)) throw new Error('agent.policy.json enforcement.hook is unset');
+const asset = policy.asset.address as Address;
+const targets = policy.policies.allowedContracts as Address[];
+
+const maxTx = BigInt(policy.policies.maxTransaction);
+const daily = BigInt(policy.policies.dailySpend);
+const floor = BigInt(policy.policies.minBalance);
+
+console.log('policy hash:', hash);
 
 const session = privateKeyToAccount(sessionKey);
 
@@ -55,17 +71,14 @@ const installData = encodeAbiParameters(
     },
     { type: 'address[]' },
   ],
-  [
-    [USDC, 100_000_000n, 500_000_000n, 10_000_000n, policyHash, false],
-    [USDC, ROUTER],
-  ],
+  [[asset, maxTx, daily, floor, hash, false], targets],
 ) as Hex;
 
-const installModuleCall = encodeFunctionData({
-  abi: parseAbi(['function installModule(uint256 moduleTypeId, address module, bytes calldata initData)']),
-  functionName: 'installModule',
-  args: [4n, hook, installData],
-});
+const accountAbi = parseAbi([
+  'function installModule(uint256 moduleTypeId, address module, bytes calldata initData)',
+  'function uninstallModule(uint256 moduleTypeId, address module, bytes calldata deInitData)',
+  'function isModuleInstalled(uint256 moduleTypeId, address module, bytes calldata additionalContext) returns (bool)',
+]);
 
 const chain = new JsonRpcChainReader({ url: rpcUrl, chainId: 11155111 });
 const executor = new BundlerExecutor({
@@ -74,11 +87,30 @@ const executor = new BundlerExecutor({
   entryPoint: ENTRY_POINT_V07,
   validator: '0xaBdBCE84aFd1CCD14a03ef78F55693daeE6052DB',
   chain,
-  signUserOpHash: async (hash: Hex) => (await session.signMessage({ message: { raw: hash } })) as Hex,
+  signUserOpHash: async (h: Hex) => (await session.signMessage({ message: { raw: h } })) as Hex,
 });
+
 const isInitSelector = toFunctionSelector('isInitialized(address)');
-const already = await chain.call(hook, `${isInitSelector}${account.slice(2).padStart(64, '0')}` as Hex).catch(() => '0x');
-console.log('hook isInitialized check raw:', already.slice(0, 10));
+const alreadyRaw = await chain
+  .call(hook, `${isInitSelector}${account.slice(2).padStart(64, '0')}` as Hex)
+  .catch(() => '0x');
+const already = alreadyRaw.slice(-64) === '1'.padStart(64, '0');
+
+if (already) {
+  console.log('hook installed — uninstalling first (owner update)');
+  const uninstallCall = encodeFunctionData({
+    abi: accountAbi,
+    functionName: 'uninstallModule',
+    args: [4n, hook, '0x'],
+  });
+  console.log('uninstall tx:', await executor.send({ account, to: account, data: uninstallCall, value: 0n }));
+}
+
+const installModuleCall = encodeFunctionData({
+  abi: accountAbi,
+  functionName: 'installModule',
+  args: [4n, hook, installData],
+});
 
 const txHash = await executor.send({ account, to: account, data: installModuleCall, value: 0n });
 console.log('install tx:', txHash);
