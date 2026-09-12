@@ -11,77 +11,14 @@
  *   red     a refusal
  */
 
+/* Palette, type and theme tokens live in the shared design system
+ * (apps/shared-design/tokens.css), imported by the layout before this file.
+ * What remains here is dashboard-specific: layout shells and component skins
+ * that consume those tokens. Do not redeclare --ink/--teal/etc. here. */
+
 :root {
-  color-scheme: light;
-
-  --ink: #0b1220;
-  --ink-2: #35415a;
-  --ink-3: #6b7794;
-  --ink-4: #94a0b8;
-
-  --bg: #ffffff;
-  --bg-2: #f7f9fb;
-  --bg-3: #eef2f7;
-  --line: #e2e8f0;
-  --line-2: #cbd5e1;
-
-  --teal: #0d9488;
-  --teal-ink: #0f766e;
-  --teal-bg: #f0fdfa;
-  --teal-line: #99f6e4;
-
-  --amber: #b45309;
-  --amber-bg: #fffbeb;
-  --amber-line: #fde68a;
-
-  --red: #b91c1c;
-  --red-bg: #fef2f2;
-  --red-line: #fecaca;
-
-  --radius: 10px;
-  --radius-sm: 7px;
-
-  --shadow-1: 0 1px 2px rgba(11, 18, 32, 0.05), 0 1px 3px rgba(11, 18, 32, 0.04);
-  --shadow-2: 0 4px 12px rgba(11, 18, 32, 0.07), 0 2px 4px rgba(11, 18, 32, 0.04);
-
-  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
-  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", sans-serif;
-
   --header-h: 60px;
   --footer-h: 78px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    color-scheme: dark;
-
-    --ink: #e8edf5;
-    --ink-2: #b3bed3;
-    --ink-3: #8592ab;
-    --ink-4: #64708a;
-
-    --bg: #0b1220;
-    --bg-2: #111a2b;
-    --bg-3: #172136;
-    --line: #223049;
-    --line-2: #2d3d5a;
-
-    --teal: #2dd4bf;
-    --teal-ink: #5eead4;
-    --teal-bg: #062c2a;
-    --teal-line: #115e59;
-
-    --amber: #fbbf24;
-    --amber-bg: #2a1f05;
-    --amber-line: #78350f;
-
-    --red: #f87171;
-    --red-bg: #2b1010;
-    --red-line: #7f1d1d;
-
-    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.45);
-  }
 }
 
 *,

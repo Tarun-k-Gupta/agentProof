@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useStream } from '@/lib/useStream';
+import { ProofSeal, ThemeToggle } from '../../shared-design/ui';
 import type { Health, Spend, Verdict } from '@/lib/types';
 import { relativeTime, SEPOLIA_EXPLORER, shortAddress, shortHash } from '@/lib/format';
 import { DecisionChip, Empty, Field, Panel, ProofBadge } from './primitives';
@@ -190,6 +191,7 @@ function Verdicted({ verdict }: { verdict: Verdict }) {
             detail={`${verdict.proof.property} · ${verdict.proof.tool} · ${verdict.proof.solverTimeMs} ms`}
           />
         ) : null}
+        {verdict.proof ? <ProofSeal property={verdict.proof.property} status={verdict.proof.status} /> : null}
       </div>
 
       {verdict.reason ? <p className="reason">{verdict.reason}</p> : null}
@@ -222,12 +224,15 @@ function Verdicted({ verdict }: { verdict: Verdict }) {
         .verdict { display: flex; flex-direction: column; gap: 18px; }
         .verdict-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .reason {
-          font-size: 13.5px;
-          line-height: 1.55;
-          color: var(--ink-2);
-          padding: 10px 12px;
+          font-family: var(--font-display);
+          font-size: 16px;
+          font-weight: 600;
+          letter-spacing: -0.01em;
+          line-height: 1.5;
+          color: var(--ink);
+          padding: 12px 14px;
           background: var(--bg-2);
-          border-left: 2px solid var(--line-2);
+          border-left: 3px solid var(--teal-line);
           border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
         }
         h3 {
@@ -323,6 +328,7 @@ function Header({
       </div>
 
       <div className="meta">
+        <ThemeToggle />
         <span className="agent mono" title={`policy ${health.policyHash}`}>
           {health.agent}
         </span>
@@ -358,7 +364,7 @@ function Header({
           box-shadow: 0 0 0 3px var(--teal-bg);
           flex: 0 0 auto;
         }
-        .brand strong { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; display: block; }
+        .brand strong { font-family: var(--font-display); font-size: 16px; font-weight: 800; letter-spacing: -0.02em; display: block; }
         .claim { font-size: 11.5px; color: var(--ink-4); display: block; margin-top: -2px; }
         .meta { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
         .agent { font-size: 12px; color: var(--ink-2); }

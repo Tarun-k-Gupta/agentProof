@@ -11,9 +11,20 @@ import {
   encodeSwapExactOut,
   UNLIMITED_APPROVAL,
 } from '@agentproof/sdk/calldata';
+import {
+  AddrChip,
+  Amount,
+  DecisionChip,
+  PolicyRow,
+  ProofSeal,
+  SpendRing,
+  ThemeToggle,
+  short,
+} from '../../shared-design/ui';
 
 const WETH_SEPOLIA = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14' as Address;
 const ATTACKER = '0x000000000000000000000000000000000000dead' as Address;
+const SEPOLIA_EXPLORER = 'https://sepolia.etherscan.io';
 
 type Template = 'swap-in' | 'swap-out' | 'transfer' | 'approve' | 'unlimited-approve';
 
@@ -47,10 +58,6 @@ const FALLBACK = {
 function toBaseUnits(amountUsdc: string): bigint {
   const [whole = '0', frac = ''] = amountUsdc.split('.');
   return BigInt(whole || '0') * 1_000_000n + BigInt((frac + '000000').slice(0, 6) || '0');
-}
-
-function short(addr: string): string {
-  return addr.length > 14 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr;
 }
 
 export default function Page() {
@@ -173,6 +180,7 @@ export default function Page() {
     setSelected(body);
     pushFeed(body);
     if (health?.account) setSpend(await (await fetch(`/api/v1/spend/${health.account}`)).json());
+    document.getElementById('verdict')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     return body;
   }
 
@@ -191,116 +199,100 @@ export default function Page() {
   const proofsTotal = proofsData?.proofs?.length ?? 0;
 
   return (
-    <main style={{ maxWidth: 920, margin: '0 auto', padding: 28, color: '#18201f' }}>
-      <header style={{ borderBottom: '2px solid #0d9488', paddingBottom: 12 }}>
-        <h1 style={{ fontSize: 22, margin: 0 }}>
-          AgentProof <span style={{ fontWeight: 400, color: '#666' }}>— live demo</span>
-        </h1>
-        <p style={{ color: '#555', fontSize: 14, margin: '6px 0 0' }}>
-          Trust the agent to decide. Don&apos;t trust it to enforce its own limits.
-        </p>
-        {error ? (
-          <p style={{ color: '#b91c1c' }}>
-            {error} <button onClick={() => void load()}>Retry</button>
-          </p>
-        ) : health ? (
-          <p style={{ fontSize: 13, color: '#555' }}>
-            <Badge text={health.mode} tone={health.mode === 'production' ? 'good' : 'warn'} /> agent {health.agent} ·
-            policy <code>{short(health.policyHash)}</code> · proofs {proven}/{proofsTotal} ·{' '}
-            <span title="server-sent event stream">live feed: {streamState}</span>
-          </p>
-        ) : (
-          <p style={{ fontSize: 13, color: '#777' }}>Connecting to the Verification API…</p>
-        )}
+    <div className="pg">
+      <header className="pg-hero">
+        <div>
+          <p className="pg-kicker">AgentProof · live demo</p>
+          <h1 className="ap-display">Trust the agent to decide. Don&apos;t trust it to enforce its own limits.</h1>
+          <p className="ap-dim">Every proposal below runs through the real policy engine. Nothing here is scripted.</p>
+        </div>
+        <div className="pg-hero__meta">
+          <ThemeToggle />
+          {error ? (
+            <p className="pg-error">
+              {error} <button type="button" className="ap-btn ap-btn--ghost" onClick={() => void load()}>Retry</button>
+            </p>
+          ) : health ? (
+            <div className="pg-badges">
+              <span className={`ap-chip ${health.mode === 'production' ? 'ap-chip--allow' : 'ap-chip--approval'}`}>{health.mode}</span>
+              <span className="ap-dim ap-mono">{health.agent}</span>
+              <span className="ap-dim">proofs {proven}/{proofsTotal}</span>
+              <span className="ap-dim">
+                <span className="ap-live-dot" aria-hidden="true" /> feed: {streamState}
+              </span>
+            </div>
+          ) : (
+            <p className="ap-dim">Connecting to the Verification API…</p>
+          )}
+        </div>
       </header>
 
-      {/* 1 · THE BRAIN */}
       <Section n="1" title="The brain — what the agent wants">
-        <p style={dim}>
-          Two canonical price signals from <code>apps/agents/trader/index.ts</code>, replayed deterministically.
-          Pressing Evaluate sends the proposal to the real <code>/v1/verify</code> engine — the verdict is computed,
-          never scripted. The live brain (<code>pnpm trader</code>, OpenRouter wired) proposes different amounts on
-          different days; the verdicts below would still be computed the same way.
-        </p>
-        {SIGNALS.map((s, i) => (
-          <div key={i} style={card}>
-            <p style={{ margin: 0, fontSize: 13, color: '#666' }}>
-              {s.pair} @ {s.price} ({s.change}) — {s.note}
-            </p>
-            <p style={{ margin: '6px 0', fontStyle: 'italic' }}>&ldquo;{s.reasoning}&rdquo;</p>
-            <p style={{ margin: '0 0 8px', fontSize: 13 }}>
-              Proposal: <strong>SWAP {s.amountUsdc} USDC</strong>{' '}
-              <button onClick={() => void evaluate('swap-in', s.amountUsdc, addrs.account)} style={btn}>
-                Evaluate
-              </button>
-            </p>
-          </div>
-        ))}
+        <p className="ap-dim">Two canonical price signals. Pressing Evaluate sends the proposal to <span className="ap-mono">/v1/verify</span> — the verdict is computed, never scripted.</p>
+        <div className="pg-grid2">
+          {SIGNALS.map((s, i) => (
+            <div key={i} className="ap-card pg-signal">
+              <p className="ap-dim ap-mono">{s.pair} @ {s.price} ({s.change}) — {s.note}</p>
+              <p className="pg-quote">&ldquo;{s.reasoning}&rdquo;</p>
+              <p className="pg-proposal">
+                Proposal: <Amount baseUnits={toBaseUnits(s.amountUsdc).toString()} /> <span className="ap-dim">SWAP</span>{' '}
+                <button type="button" className="ap-btn" onClick={() => void evaluate('swap-in', s.amountUsdc, addrs.account)}>
+                  Evaluate
+                </button>
+              </p>
+            </div>
+          ))}
+        </div>
       </Section>
 
-      {/* 2 · THE VERDICT */}
-      <Section n="2" title="The verdict — what the policy says">
+      <Section n="2" title="The verdict — what the policy says" id="verdict">
         {selected && !selected.error ? (
-          <div>
-            <h3 style={{ margin: '0 0 6px' }}>
-              <DecisionChip decision={selected.decision} />{' '}
-              <span style={{ fontWeight: 400, fontSize: 14 }}>{selected.reason}</span>
-            </h3>
-            {selected.intent ? <p style={dim}>Intent: {selected.intent.summary}</p> : null}
-            {selected.policyRows?.length ? (
-              <table style={table}>
-                <thead>
-                  <tr>
-                    <th style={th}>policy</th>
-                    <th style={th}>observed</th>
-                    <th style={th}>limit</th>
-                    <th style={th}>provenance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selected.policyRows.map((r: any, i: number) => (
-                    <tr key={i}>
-                      <td style={td}>
-                        {r.passed === false ? '✖ ' : '✔ '}
-                        {r.name ?? r.id}
-                      </td>
-                      <td style={td}>{r.observed ?? '—'}</td>
-                      <td style={td}>{r.limit ?? '—'}</td>
-                      <td style={td}>{r.provenance ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <div className={`ap-verdict ap-verdict--${selected.decision}`}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="ap-verdict__decision">{selected.decision}</span>
+              <DecisionChip decision={selected.decision} />
+              {selected.proof ? <ProofSeal property={selected.proof.property} status={selected.proof.status} /> : null}
+            </div>
+            <p className="ap-verdict__reason">{selected.reason}</p>
+            {selected.intent ? <p className="ap-dim">{selected.intent.summary}</p> : null}
+            {selected.intent?.outflow?.length ? (
+              <div className="pg-outflow">
+                {selected.intent.outflow.map((f: any, i: number) => (
+                  <span key={i} className="ap-chip" title={`${f.asset}`}>
+                    {short(f.asset)} · <Amount baseUnits={f.amount} /> · {f.provenance}
+                  </span>
+                ))}
+              </div>
             ) : null}
-            {selected.proof ? (
-              <p style={dim}>
-                Invariant <code>{selected.proof.property}</code>: <strong>{selected.proof.status}</strong> (
-                {selected.proof.tool}, {selected.proof.solverTimeMs} ms)
-              </p>
+            {selected.policyRows?.length ? (
+              <div>
+                {selected.policyRows.map((r: any, i: number) => (
+                  <PolicyRow key={i} name={r.name ?? r.id} passed={r.passed !== false} observed={r.observed?.toString()} limit={r.limit?.toString()} />
+                ))}
+              </div>
             ) : null}
             {selected.enforcement ? (
-              <p style={{ fontSize: 12, color: '#777' }}>
-                Advisory only — enforcement is the hook {short(selected.enforcement.hook)} on{' '}
-                {short(selected.enforcement.account)} ({selected.enforcement.mode}).
+              <p className="ap-dim">
+                Advisory only — enforcement is the hook <span className="ap-mono">{short(selected.enforcement.hook)}</span> on{' '}
+                <span className="ap-mono">{short(selected.enforcement.account)}</span> ({selected.enforcement.mode}).
                 {selected.enforcement.unevaluatedPolicies?.length
-                  ? ` Unevaluated: ${selected.enforcement.unevaluatedPolicies.map((u: any) => `${u.policy} (${u.reason})`).join('; ')}`
+                  ? ` Unevaluated: ${selected.enforcement.unevaluatedPolicies.map((u: any) => u.policy).join(', ')}`
                   : ''}
               </p>
             ) : null}
           </div>
         ) : selected?.error ? (
-          <p style={{ color: '#b91c1c' }}>{selected.error}</p>
+          <p className="pg-error">{selected.error}</p>
         ) : (
-          <p style={dim}>No verdict yet — evaluate a proposal above, or free-play below.</p>
+          <p className="ap-dim">No verdict yet — evaluate a proposal above, or free-play below.</p>
         )}
       </Section>
 
-      {/* 3 · FREE PLAY */}
       <Section n="3" title="Free play — type your own attack">
-        <div style={{ display: 'grid', gap: 10 }}>
-          <label style={lbl}>
+        <div className="ap-card pg-form">
+          <label className="ap-field">
             Template{' '}
-            <select value={template} onChange={(e) => setTemplate(e.target.value as Template)}>
+            <select className="ap-select" value={template} onChange={(e) => setTemplate(e.target.value as Template)}>
               <option value="swap-in">swap exact-in (amountIn = amount)</option>
               <option value="swap-out">swap exact-out (amountInMaximum = amount — the trap)</option>
               <option value="transfer">ERC-20 transfer to recipient</option>
@@ -308,176 +300,304 @@ export default function Page() {
               <option value="unlimited-approve">unlimited approval (always BLOCK)</option>
             </select>
           </label>
-          <label style={lbl}>
-            Amount (USDC){' '}
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" style={{ width: 120 }} />
+          <label className="ap-field">
+            Amount (USDC) <input className="ap-input" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" />
           </label>
-          <label style={lbl}>
-            Recipient{' '}
-            <input value={recipient} onChange={(e) => setRecipient(e.target.value)} style={{ width: 400 }} />
+          <label className="ap-field">
+            Recipient <input className="ap-input ap-mono" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
           </label>
-          <div>
-            <button onClick={() => void onFreePlay()} disabled={busy} style={btnLg}>
+          <div className="pg-btnrow">
+            <button type="button" onClick={() => void onFreePlay()} disabled={busy} className="ap-btn">
               {busy ? 'Evaluating…' : 'Evaluate'}
-            </button>{' '}
-            <button onClick={() => { setAmount('80'); setTemplate('swap-in'); }} style={btn}>valid 80</button>{' '}
-            <button onClick={() => { setAmount('250'); setTemplate('swap-in'); }} style={btn}>oversized 250</button>{' '}
-            <button onClick={() => { setAmount('50'); setTemplate('transfer'); setRecipient(ATTACKER); }} style={btn}>
-              injection → {short(ATTACKER)}
             </button>
+            <button type="button" className="ap-btn ap-btn--ghost" onClick={() => { setAmount('80'); setTemplate('swap-in'); }}>valid 80</button>
+            <button type="button" className="ap-btn ap-btn--ghost" onClick={() => { setAmount('250'); setTemplate('swap-in'); }}>oversized 250</button>
+            <button type="button" className="ap-btn ap-btn--ghost" onClick={() => { setAmount('50'); setTemplate('transfer'); setRecipient(ATTACKER); }}>injection</button>
           </div>
         </div>
       </Section>
 
-      {/* 4 · THE BOUNDARY */}
       <Section n="4" title="The boundary — what happens without the SDK">
-        <p style={dim}>
-          The demo&apos;s key moment (<code>scripts/demo-runner.ts</code> step 09): the SDK is closed and a 250 USDC
-          transfer is signed directly with the session key. No policy engine is consulted. The ERC-7579 hook sits
-          inside the account&apos;s execution path, so the transaction <strong>reverts on chain</strong> (
-          <code>ExceedsMaxTransaction</code>). Run <code>pnpm demo</code> to watch it; account{' '}
-          <code>{short(addrs.account)}</code>, hook <code>{short(health?.hook ?? '0x0000000000000000000000000000000000000000')}</code>.
+        <p className="ap-dim">
+          The SDK is convenience. The hook is the boundary: close the SDK, sign a 250 USDC transfer directly with the
+          session key, and the account reverts — <span className="ap-mono">ExceedsMaxTransaction</span> on a funded
+          account. Run <span className="ap-mono">pnpm demo</span> step 09 to watch it.
         </p>
+        <div className="pg-addrs">
+          <span className="ap-dim">account</span>
+          <AddrChip address={addrs.account} explorer={`${SEPOLIA_EXPLORER}/address/${addrs.account}`} />
+          <span className="ap-dim">hook</span>
+          <AddrChip address={health?.hook ?? FALLBACK.account} explorer={`${SEPOLIA_EXPLORER}/address/${health?.hook ?? ''}`} />
+        </div>
       </Section>
 
-      {/* 5 · THE MONEY */}
       <Section n="5" title="The money — daily spend">
         {spend ? (
-          <p style={{ fontSize: 14 }}>
-            Spent today <strong>{spend.spentGraph}</strong> / limit {spend.limit} · remaining {spend.remaining}
-            {spend.spentOnchain != null
-              ? ` · on-chain ${spend.spentOnchain} · reconciled ${String(spend.reconciled)}`
-              : ' · on-chain: n/a in simulation'}
-          </p>
+          <div className="ap-card pg-spend">
+            <SpendRing spent={spend.spentGraph ?? '0'} limit={spend.limit ?? '1'} />
+            <div>
+              <Amount baseUnits={spend.spentGraph ?? '0'} />
+              <p className="ap-dim">
+                of <span className="ap-mono ap-tabular">{spend.limit}</span> limit · remaining{' '}
+                <span className="ap-mono ap-tabular">{spend.remaining}</span>
+                {spend.spentOnchain != null
+                  ? ` · on-chain ${spend.spentOnchain} · reconciled ${String(spend.reconciled)}`
+                  : ' · on-chain: n/a in simulation'}
+              </p>
+            </div>
+          </div>
         ) : (
-          <p style={dim}>Spend data appears once the API is reachable.</p>
+          <p className="ap-dim">Spend data appears once the API is reachable.</p>
         )}
       </Section>
 
-      {/* 6 · THE MATH */}
       <Section n="6" title="The math — formal verification">
-        <p style={dim}>
-          <code>MAX_TRANSFER</code> and <code>DAILY_SPEND</code> over <code>PolicyLib</code>, checked with solc
-          SMTChecker (CHC). The hook itself is fuzzed, not proven — the page says which. Until{' '}
-          <code>pnpm verify:formal</code> runs, the SDK reports <code>NOT_RUN</code>, never <code>PROVEN</code>.
+        <p className="ap-dim">
+          <span className="ap-mono">MAX_TRANSFER</span> and <span className="ap-mono">DAILY_SPEND</span> over{' '}
+          <span className="ap-mono">PolicyLib</span>, checked with solc SMTChecker. The hook itself is fuzzed, not
+          proven — the table says which. No artifacts, no <span className="ap-mono">PROVEN</span>: the SDK reports{' '}
+          <span className="ap-mono">NOT_RUN</span>.
         </p>
         {proofsData?.proofs?.length ? (
-          <table style={table}>
-            <thead>
-              <tr>
-                <th style={th}>property</th>
-                <th style={th}>status</th>
-                <th style={th}>tool</th>
-                <th style={th}>time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {proofsData.proofs.map((p: any, i: number) => (
-                <tr key={i}>
-                  <td style={td}>{p.property}</td>
-                  <td style={td}>{p.status === 'PROVEN' ? '✔ PROVEN' : p.status}</td>
-                  <td style={td}>{p.tool ?? '—'}</td>
-                  <td style={td}>{p.solverTimeMs != null ? `${p.solverTimeMs} ms` : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="ap-card pg-proofs">
+            {proofsData.proofs.map((p: any, i: number) => (
+              <div key={i} className="pg-proofrow">
+                <span className="ap-mono">{p.property}</span>
+                {p.status === 'PROVEN' ? (
+                  <ProofSeal property={p.property} status={p.status} />
+                ) : (
+                  <DecisionChip decision={p.status} />
+                )}
+                <span className="ap-dim">
+                  {p.tool ?? '—'}
+                  {p.solverTimeMs != null ? ` · ${p.solverTimeMs} ms` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
         ) : (
-          <p style={dim}>Proof artifacts appear once the API is reachable.</p>
+          <p className="ap-dim">Proof artifacts appear once the API is reachable.</p>
         )}
       </Section>
 
-      {/* 7 · THE IDENTITY */}
       <Section n="7" title="The identity — policy, published">
         {policyData ? (
-          <div style={{ fontSize: 13 }}>
-            <p style={{ margin: '0 0 6px' }}>
-              <code>{policyData.name}</code> · policyHash <code>{short(policyData.policyHash)}</code>
+          <div className="ap-card pg-identity">
+            <p>
+              <span className="ap-mono">{policyData.name}</span> · policyHash{' '}
+              <span className="ap-mono">{short(policyData.policyHash)}</span>
+            </p>
+            <p className="ap-dim">
               {policyData.policy?.publishedPolicyHash
-                ? ` · published ${short(policyData.policy.publishedPolicyHash)} · matches local: ${String(policyData.policy.matchesLocal)} · status ${policyData.policy.status}`
-                : ' · served from local file (no ENS resolver configured)'}
+                ? `published ${short(policyData.policy.publishedPolicyHash)} · matches local: ${String(policyData.policy.matchesLocal)} · status ${policyData.policy.status}`
+                : 'served from local file (no ENS resolver configured)'}
             </p>
             <details>
-              <summary>Raw policy document</summary>
-              <pre style={{ fontSize: 12, overflow: 'auto' }}>{JSON.stringify(policyData.policy?.document ?? policyData.policy, null, 2)}</pre>
+              <summary className="ap-dim">Raw policy document</summary>
+              <pre className="ap-mono pg-raw">{JSON.stringify(policyData.policy?.document ?? policyData.policy, null, 2)}</pre>
             </details>
           </div>
         ) : (
-          <p style={dim}>Policy data appears once the API is reachable.</p>
+          <p className="ap-dim">Policy data appears once the API is reachable.</p>
         )}
       </Section>
 
-      {/* 8 · AGENT LOG */}
       <Section n="8" title={`Agent log — every verdict, live (${streamState})`}>
         {feed.length === 0 ? (
-          <p style={dim}>Nothing yet. Evaluate something — it will appear here via the server-sent stream.</p>
+          <p className="ap-dim">Nothing yet. Evaluate something — it will appear here via the server-sent stream.</p>
         ) : (
-          <ol style={{ paddingLeft: 18, margin: 0, display: 'grid', gap: 8 }}>
+          <ol className="ap-timeline">
             {feed.map((f, i) => (
-              <li key={i} style={{ fontSize: 13 }}>
-                <button onClick={() => setSelected(f)} style={{ ...btn, borderColor: '#0d9488' }} title="inspect">
-                  <DecisionChip decision={f.decision} />
-                </button>{' '}
-                {f.intent?.summary ?? f.reason ?? JSON.stringify(f)}
+              <li key={i}>
+                <button type="button" className="ap-timeline__item" onClick={() => { setSelected(f); document.getElementById('verdict')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}>
+                  <span className={`ap-timeline__dot ap-timeline__dot--${f.decision}`} aria-hidden="true" />
+                  <span className="ap-timeline__text">
+                    <DecisionChip decision={f.decision} /> {f.intent?.summary ?? f.reason ?? ''}
+                  </span>
+                </button>
               </li>
             ))}
           </ol>
         )}
       </Section>
 
-      <footer style={{ marginTop: 28, borderTop: '1px solid #e4e9e8', paddingTop: 12, fontSize: 12, color: '#777' }}>
-        This page is advisory. Enforcement is the on-chain hook. Amounts in base units (6 decimals); an unlimited
-        approval counts as unbounded outflow and always blocks.
+      <footer className="pg-footer">
+        <p className="ap-dim">
+          Advisory page. Enforcement is the on-chain hook. Amounts in base units (6 decimals); an unlimited approval
+          counts as unbounded outflow and always blocks.
+        </p>
       </footer>
-    </main>
+
+      <style jsx global>{`
+        .pg {
+          max-width: 960px;
+          margin: 0 auto;
+          padding: 32px 24px 64px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .pg-hero {
+          display: flex;
+          justify-content: space-between;
+          gap: 28px;
+          flex-wrap: wrap;
+          padding: 40px 0 20px;
+        }
+        .pg-hero h1 {
+          font-size: clamp(30px, 4.6vw, 46px);
+          letter-spacing: var(--tracking-tight);
+          margin: 12px 0;
+          max-width: 24ch;
+        }
+        .pg-kicker {
+          font-family: var(--font-mono);
+          font-size: var(--text-caption);
+          font-weight: 600;
+          letter-spacing: var(--tracking-wide);
+          text-transform: uppercase;
+          color: var(--teal-ink);
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .pg-kicker::after {
+          content: '';
+          height: 1px;
+          width: 72px;
+          background: var(--teal-line);
+        }
+        .pg-hero__meta {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          align-items: flex-end;
+          justify-content: center;
+        }
+        .pg-badges {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+        .pg section {
+          margin-top: 34px;
+          border-top: 1px solid var(--line);
+          padding-top: 20px;
+        }
+        .pg section h2 {
+          margin-bottom: 12px;
+        }
+        .pg-grid2 {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 14px;
+        }
+        @media (max-width: 720px) {
+          .pg-grid2 {
+            grid-template-columns: 1fr;
+          }
+        }
+        .pg-signal {
+          padding: 16px 18px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .pg-quote {
+          font-size: var(--text-h3);
+          font-style: italic;
+          color: var(--ink-2);
+          border-left: 3px solid var(--teal-line);
+          padding-left: 12px;
+        }
+        .pg-proposal {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+          font-size: var(--text-small);
+        }
+        .pg-outflow {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .pg-form {
+          padding: 22px 24px;
+          display: grid;
+          gap: 14px;
+        }
+        .pg-btnrow {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .pg-addrs {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          flex-wrap: wrap;
+          margin-top: 12px;
+        }
+        .pg-spend {
+          padding: 20px 22px;
+          display: flex;
+          gap: 22px;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+        .pg-proofs {
+          padding: 8px 20px;
+        }
+        .pg-proofrow {
+          display: flex;
+          gap: 12px;
+          align-items: center;
+          padding: 10px 0;
+          border-bottom: 1px solid var(--line);
+          font-size: var(--text-small);
+        }
+        .pg-proofrow:last-child {
+          border-bottom: 0;
+        }
+        .pg-identity {
+          padding: 16px 20px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          font-size: var(--text-small);
+        }
+        .pg-raw {
+          font-size: 12px;
+          overflow: auto;
+          background: var(--bg-2);
+          border: 1px solid var(--line);
+          border-radius: var(--radius-sm);
+          padding: 12px;
+        }
+        .pg-error {
+          color: var(--red);
+          font-size: var(--text-small);
+        }
+        .pg-footer {
+          margin-top: 32px;
+          border-top: 1px solid var(--line);
+          padding-top: 14px;
+        }
+      `}</style>
+    </div>
   );
 }
 
-function Section({ n, title, children }: { n: string; title: string; children: React.ReactNode }) {
+function Section({ n, title, children, id }: { n: string; title: string; children: React.ReactNode; id?: string }) {
   return (
-    <section style={{ marginTop: 24, borderTop: '1px solid #e4e9e8', paddingTop: 14 }}>
-      <h2 style={{ fontSize: 16, margin: '0 0 8px' }}>
-        <span style={{ color: '#0d9488' }}>{n} ·</span> {title}
+    <section id={id}>
+      <h2 className="ap-section-title">
+        <span className="ap-section-num">{n}</span> {title}
       </h2>
       {children}
     </section>
   );
 }
-
-function DecisionChip({ decision }: { decision?: string }) {
-  const color = decision === 'ALLOW' ? '#0d9488' : decision === 'BLOCK' ? '#b91c1c' : '#b45309';
-  return <span style={{ color, fontWeight: 700 }}>{decision ?? '—'}</span>;
-}
-
-function Badge({ text, tone }: { text: string; tone: 'good' | 'warn' }) {
-  return (
-    <span
-      style={{
-        fontSize: 11,
-        fontWeight: 700,
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em',
-        padding: '2px 8px',
-        borderRadius: 5,
-        border: '1px solid #ccc',
-        color: tone === 'good' ? '#0d9488' : '#b45309',
-      }}
-    >
-      {text}
-    </span>
-  );
-}
-
-const dim: React.CSSProperties = { fontSize: 13, color: '#555' };
-const card: React.CSSProperties = {
-  border: '1px solid #e4e9e8',
-  borderRadius: 8,
-  padding: '10px 14px',
-  marginBottom: 10,
-};
-const btn: React.CSSProperties = { minHeight: 32, padding: '0 12px', cursor: 'pointer' };
-const btnLg: React.CSSProperties = { minHeight: 44, padding: '0 20px', cursor: 'pointer' };
-const lbl: React.CSSProperties = { fontSize: 14 };
-const table: React.CSSProperties = { borderCollapse: 'collapse', fontSize: 13, width: '100%' };
-const th: React.CSSProperties = { textAlign: 'left', borderBottom: '2px solid #ccc', padding: '4px 8px', color: '#666' };
-const td: React.CSSProperties = { borderBottom: '1px solid #eee', padding: '4px 8px' };

@@ -1,0 +1,386 @@
+/* AgentProof shared components. Imported alongside tokens.css. */
+
+/* ---- Verdict hero -------------------------------------------------------- */
+.ap-verdict {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 30px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--card);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+  animation: ap-rise var(--dur-2) var(--ease-out);
+}
+
+.ap-verdict::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 5px;
+}
+
+.ap-verdict--ALLOW::before {
+  background: linear-gradient(90deg, var(--teal-strong), var(--teal-glow));
+}
+
+.ap-verdict--BLOCK::before {
+  background: linear-gradient(90deg, var(--red), #f3a3a3);
+}
+
+.ap-verdict--REQUIRE_APPROVAL::before {
+  background: linear-gradient(90deg, var(--amber), #f5cf7a);
+}
+
+.ap-verdict--ALLOW {
+  background: linear-gradient(180deg, var(--teal-bg) 0%, var(--card) 42%);
+}
+
+.ap-verdict--BLOCK {
+  background: linear-gradient(180deg, var(--red-bg) 0%, var(--card) 42%);
+}
+
+.ap-verdict--REQUIRE_APPROVAL {
+  background: linear-gradient(180deg, var(--amber-bg) 0%, var(--card) 42%);
+}
+
+.ap-verdict__decision {
+  font-family: var(--font-display);
+  font-size: var(--text-display);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.ap-verdict--ALLOW .ap-verdict__decision {
+  color: var(--teal-ink);
+}
+
+.ap-verdict--BLOCK .ap-verdict__decision {
+  color: var(--red);
+}
+
+.ap-verdict--REQUIRE_APPROVAL .ap-verdict__decision {
+  color: var(--amber);
+}
+
+.ap-verdict__reason {
+  font-size: var(--text-h3);
+  color: var(--ink-2);
+  max-width: 62ch;
+}
+
+/* ---- Amount hero ---------------------------------------------------------- */
+.ap-amount {
+  font-family: var(--font-mono);
+  font-size: var(--text-hero-num);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.ap-amount__unit {
+  font-size: var(--text-h3);
+  font-weight: 500;
+  color: var(--ink-3);
+  margin-left: 8px;
+}
+
+/* ---- Policy bars: limit vs observed --------------------------------------- */
+.ap-policy-row {
+  display: grid;
+  grid-template-columns: 190px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-small);
+}
+
+.ap-policy-row:last-child {
+  border-bottom: 0;
+}
+
+.ap-policy-row__name {
+  font-weight: 600;
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ap-policy-row__mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.ap-policy-row__mark--pass {
+  background: var(--teal-bg);
+  color: var(--teal-ink);
+  border: 1px solid var(--teal-line);
+}
+
+.ap-policy-row__mark--fail {
+  background: var(--red-bg);
+  color: var(--red);
+  border: 1px solid var(--red-line);
+}
+
+.ap-policy-row__bar {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-3);
+  position: relative;
+  overflow: hidden;
+}
+
+.ap-policy-row__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-pill);
+  background: var(--teal);
+  transition: width var(--dur-2) var(--ease-out);
+}
+
+.ap-policy-row__fill--over {
+  background: var(--red);
+}
+
+.ap-policy-row__nums {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- Spend ring ------------------------------------------------------------ */
+.ap-ring {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.ap-ring__svg {
+  transform: rotate(-90deg);
+}
+
+.ap-ring__track {
+  stroke: var(--bg-3);
+}
+
+.ap-ring__value {
+  stroke: var(--teal);
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--dur-2) var(--ease-out);
+}
+
+.ap-ring__center {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Address chip ----------------------------------------------------------- */
+.ap-addr {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 3px 6px 3px 12px;
+  color: var(--ink-2);
+}
+
+.ap-addr button {
+  border: 1px solid var(--line-2);
+  background: var(--card);
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  cursor: pointer;
+  color: var(--ink-3);
+}
+
+.ap-addr button:hover {
+  color: var(--teal-ink);
+  border-color: var(--teal-line);
+}
+
+.ap-addr a {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ---- Timeline (agent log) ---------------------------------------------------- */
+.ap-timeline {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 0;
+}
+
+.ap-timeline__item {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  color: inherit;
+}
+
+.ap-timeline__item:hover {
+  background: var(--bg-2);
+}
+
+.ap-timeline__dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  margin-top: 5px;
+}
+
+.ap-timeline__dot--ALLOW {
+  background: var(--teal);
+}
+
+.ap-timeline__dot--BLOCK {
+  background: var(--red);
+}
+
+.ap-timeline__dot--REQUIRE_APPROVAL {
+  background: var(--amber);
+}
+
+.ap-timeline__text {
+  font-size: var(--text-small);
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+/* ---- Proof seal --------------------------------------------------------------- */
+.ap-seal {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: var(--text-small);
+  font-weight: 700;
+  color: var(--gold);
+  background: var(--gold-bg);
+  border: 1px solid var(--gold-line);
+  border-radius: var(--radius-pill);
+  padding: 4px 14px;
+}
+
+/* ---- Theme toggle -------------------------------------------------------------- */
+.ap-theme-toggle {
+  border: 1px solid var(--line-2);
+  background: var(--card);
+  color: var(--ink-2);
+  border-radius: var(--radius-pill);
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: var(--text-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ap-theme-toggle:hover {
+  border-color: var(--teal-line);
+  color: var(--teal-ink);
+}
+
+/* ---- Form controls — native elements, tailored -------------------------------- */
+.ap-field {
+  display: grid;
+  gap: 7px;
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.ap-input,
+.ap-select {
+  font: inherit;
+  font-weight: 400;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  min-height: 46px;
+  padding: 0 14px;
+  width: 100%;
+  transition: border-color var(--dur-1) var(--ease-out), box-shadow var(--dur-1) var(--ease-out);
+}
+
+.ap-input:focus,
+.ap-select:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px var(--teal-bg);
+}
+
+.ap-select {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
+    linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 36px;
+  cursor: pointer;
+}
+
+/* ---- Buttons ------------------------------------------------------------------- */
+.ap-btn:active {
+  transform: translateY(0);
+}
+
+.ap-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+  transform: none;
+  box-shadow: none;
+}
+
+/* ---- Timeline rail ---------------------------------------------------------------- */
+.ap-timeline__item {
+  position: relative;
+}
+
+.ap-timeline li:not(:last-child) .ap-timeline__item::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 26px;
+  bottom: -8px;
+  width: 2px;
+  background: var(--line);
+}
+
+.ap-timeline__dot {
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 0 0 3px var(--bg);
+}
