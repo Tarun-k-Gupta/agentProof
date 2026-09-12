@@ -54,7 +54,7 @@ class FakeFacilitator implements Facilitator {
     if (this.throwOnSettle) throw new Error('settle timed out');
     this.settled.push(payload);
     return this.settles
-      ? { settled: true, transactionId: '0.0.1234@1700000000.000000000', network: 'hedera-testnet' }
+      ? { settled: true, transactionId: '0.0.1234@1700000000.000000000', network: 'hedera:testnet' }
       : { settled: false, reason: 'payer account has no USDC association' };
   }
 }
@@ -82,8 +82,9 @@ before(async () => {
     x402: {
       enabled: true,
       facilitatorUrl: 'http://facilitator.invalid',
-      network: 'hedera-testnet',
+      network: 'hedera:testnet',
       asset: '0.0.429274',
+      assetDecimals: 6,
       payTo: '0.0.1001',
       priceVerify: '0.01',
       priceDecode: '0.005',
@@ -142,8 +143,8 @@ describe('x402 gating', () => {
     assert.equal(res.status, 402);
     const body = await res.json();
     assert.equal(body.x402Version, 1);
-    assert.equal(body.accepts[0].amount, '0.01');
-    assert.equal(body.accepts[0].network, 'hedera-testnet');
+    assert.equal(body.accepts[0].amount, '10000'); // 0.01 USDC in atomic units: the facilitator settles exactly this
+    assert.equal(body.accepts[0].network, 'hedera:testnet');
     assert.equal(body.accepts[0].resource, 'http://localhost:8402/v1/verify');
   });
 
@@ -151,7 +152,7 @@ describe('x402 gating', () => {
     const res = await post('/v1/decode', ACTION.action);
     assert.equal(res.status, 402);
     const body = await res.json();
-    assert.equal(body.accepts[0].amount, '0.005');
+    assert.equal(body.accepts[0].amount, '5000'); // 0.005 USDC, atomic
     assert.equal(body.accepts[0].resource, 'http://localhost:8402/v1/decode');
   });
 

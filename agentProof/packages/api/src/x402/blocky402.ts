@@ -8,7 +8,7 @@ import type { HttpClient, Logger } from '@agentproof/sdk';
  * signature, pays the gas and submits. We never hold the client's key and we
  * never submit on their behalf.
  *
- * Verify `/supported` returns hedera-testnet before trusting any of this. A
+ * Verify `/supported` returns hedera:testnet before trusting any of this. A
  * facilitator that does not list the network will accept a challenge and then
  * fail to settle, which looks exactly like a working integration until the
  * moment it is demonstrated.
@@ -18,6 +18,7 @@ export interface PaymentRequirements {
   scheme: 'exact';
   network: string;
   asset: string;
+  /** atomic units of the asset (tinybars for HBAR): the facilitator settles exactly this */
   amount: string;
   payTo: string;
   resource: string;
@@ -25,6 +26,8 @@ export interface PaymentRequirements {
   maxTimeoutSeconds: number;
   facilitator: string;
   nonce: string;
+  /** e.g. { feePayer } for Hedera, from the facilitator's /supported */
+  extra?: { feePayer?: string };
 }
 
 export interface SettlementResult {
@@ -45,12 +48,20 @@ export interface Facilitator {
 }
 
 export class Blocky402Facilitator implements Facilitator {
+  private feePayerValue?: string;
+
   constructor(
     private readonly options: { baseUrl: string; http: HttpClient; logger?: Logger; network?: string },
   ) {}
 
+  /** Fee-payer advertised for our network, if assertSupported has run. */
+  get feePayer(): string | undefined {
+    return this.feePayerValue;
+  }
+
   private get network(): string {
-    return this.options.network ?? 'hedera-testnet';
+    // CAIP-style x402 network id, as the facilitator advertises it.
+    return this.options.network ?? 'hedera:testnet';
   }
 
   /**
@@ -58,27 +69,42 @@ export class Blocky402Facilitator implements Facilitator {
    * @throws if the facilitator does not support our network and scheme.
    */
   async assertSupported(): Promise<void> {
-    const supported = await this.options.http.getJson<{ kinds?: Array<{ scheme: string; network: string }> }>(
-      `${this.options.baseUrl}/supported`,
-    );
-    const ok = supported.kinds?.some((k) => k.network === this.network && k.scheme === 'exact');
-    if (!ok) {
+    const supported = await this.options.http.getJson<{
+      kinds?: Array<{ scheme: string; network: string; extra?: { feePayer?: string } }>;
+    }>(`${this.options.baseUrl}/supported`);
+    const kind = supported.kinds?.find((k) => k.network === this.network && k.scheme === 'exact');
+    if (!kind) {
       throw new Error(
         `Facilitator ${this.options.baseUrl} does not advertise scheme=exact on ${this.network}. ` +
           `Advertised: ${JSON.stringify(supported.kinds ?? [])}. Refusing to start rather than serving ` +
           '402 challenges that cannot be settled.',
       );
     }
-    this.options.logger?.log('info', 'facilitator supports our network', { network: this.network });
+    this.feePayerValue = kind.extra?.feePayer;
+    this.options.logger?.log('info', 'facilitator supports our network', {
+      network: this.network,
+      feePayer: this.feePayerValue,
+    });
   }
 
   /** Cryptographic verification of a payment payload, before we do any work. */
   async verify(payload: string, requirements: PaymentRequirements): Promise<{ valid: boolean; reason?: string }> {
     try {
-      return await this.options.http.postJson<{ valid: boolean; reason?: string }>(
-        `${this.options.baseUrl}/verify`,
-        { paymentPayload: decodePayload(payload), paymentRequirements: requirements },
-      );
+      const response = await this.options.http.postJson<{
+        isValid?: boolean;
+        payer?: string;
+        invalidReason?: string;
+        invalidMessage?: string;
+      }>(`${this.options.baseUrl}/verify`, {
+        x402Version: 2,
+        paymentPayload: decodePayload(payload),
+        paymentRequirements: requirements,
+      });
+      if (response.isValid) return { valid: true };
+      return {
+        valid: false,
+        reason: [response.invalidReason, response.invalidMessage].filter(Boolean).join(': ') || 'verify rejected',
+      };
     } catch (error) {
       return { valid: false, reason: error instanceof Error ? error.message : 'verify call failed' };
     }
@@ -87,15 +113,33 @@ export class Blocky402Facilitator implements Facilitator {
   /** Settlement. Called only after the work has succeeded. */
   async settle(payload: string, requirements: PaymentRequirements): Promise<SettlementResult> {
     try {
-      const response = await this.options.http.postJson<SettlementResult>(`${this.options.baseUrl}/settle`, {
+      const response = await this.options.http.postJson<{
+        success?: boolean;
+        transaction?: string;
+        network?: string;
+        payer?: string;
+        errorReason?: string;
+        errorMessage?: string;
+      }>(`${this.options.baseUrl}/settle`, {
+        x402Version: 2,
         paymentPayload: decodePayload(payload),
         paymentRequirements: requirements,
       });
-      this.options.logger?.log('info', 'payment settled', {
-        transactionId: response.transactionId,
+      const settled = response.success === true;
+      this.options.logger?.log('info', 'payment settlement attempted', {
+        settled,
+        transactionId: response.transaction,
         network: response.network,
       });
-      return response;
+      return {
+        settled,
+        transactionId: response.transaction,
+        network: response.network,
+        payer: response.payer,
+        reason: settled
+          ? undefined
+          : [response.errorReason, response.errorMessage].filter(Boolean).join(': ') || 'settle rejected',
+      };
     } catch (error) {
       return { settled: false, reason: error instanceof Error ? error.message : 'settle call failed' };
     }

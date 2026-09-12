@@ -11,6 +11,10 @@ export interface X402Options {
   payTo: string;
   /** price per call, in the asset's display units, e.g. '0.01' */
   price: string;
+  /** decimals of the priced asset (HBAR 8, USDC 6): converts price to atomic units */
+  assetDecimals: number;
+  /** passthrough for chains whose facilitator needs it (Hedera feePayer) */
+  extra?: { feePayer?: string };
   baseUrl: string;
   logger?: Logger;
   /** disables gating entirely; used only for local development */
@@ -61,13 +65,14 @@ export function createX402Gate(options: X402Options) {
       scheme: 'exact',
       network: options.network,
       asset: options.asset,
-      amount: options.price,
+      amount: toAtomicUnits(options.price, options.assetDecimals),
       payTo: options.payTo,
       resource: `${options.baseUrl}${resource}`,
       description: 'AgentProof policy verification, metered per call',
       maxTimeoutSeconds: 60,
       facilitator: 'blocky402',
       nonce: randomUUID(),
+      ...(options.extra ? { extra: options.extra } : {}),
     };
 
     const header = req.headers['x-payment'];
@@ -154,8 +159,14 @@ async function challenge(res: ServerResponse, requirements: PaymentRequirements,
   await respondJson(res, 402, { x402Version: 1, error, accepts: [requirements] });
 }
 
-function isWellFormedPayment(header: string): boolean {
-  try {
+/** Display units (e.g. '0.01') to atomic units ('1000000' at 8 decimals). */
+export function toAtomicUnits(display: string, decimals: number): string {
+  const [whole = '0', frac = ''] = display.split('.');
+  const padded = (frac + '0'.repeat(decimals)).slice(0, decimals);
+  return (BigInt(whole || '0') * 10n ** BigInt(decimals) + BigInt(padded || '0')).toString();
+}
+
+function isWellFormedPayment(header: string): boolean {  try {
     JSON.parse(Buffer.from(header, 'base64').toString('utf8'));
     return true;
   } catch {

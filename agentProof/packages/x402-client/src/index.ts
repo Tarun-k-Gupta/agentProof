@@ -22,6 +22,7 @@ export interface PaymentRequirements {
   resource: string;
   nonce: string;
   maxTimeoutSeconds?: number;
+  extra?: { feePayer?: string };
 }
 
 export interface PaymentSigner {

@@ -10,11 +10,15 @@
   },
   "dependencies": {
     "@agentproof/sdk": "workspace:*",
-    "@agentproof/x402-client": "workspace:*"
+    "@agentproof/x402-client": "workspace:*",
+    "@x402/hedera": "^2.25.0"
   },
   "optionalDependencies": {
+    "@hashgraph/sdk": "^2.62.0",
     "@langchain/langgraph": "^0.2.39",
     "@langchain/openai": "^0.3.14"
   },
-  "devDependencies": { "typescript": "^5.7.2" }
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
 }

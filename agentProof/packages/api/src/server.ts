@@ -69,6 +69,7 @@ export interface ServerOptions {
     facilitatorUrl: string;
     network: string;
     asset: string;
+    assetDecimals: number;
     payTo: string;
     priceVerify: string;
     priceDecode: string;
@@ -252,23 +253,31 @@ export async function createApiServer(options: ServerOptions) {
       facilitator,
       network: options.x402.network,
       asset: options.x402.asset,
+      assetDecimals: options.x402.assetDecimals,
       payTo: options.x402.payTo,
       price: options.x402.priceVerify,
       baseUrl: options.x402.baseUrl,
       logger,
       enabled: options.x402.enabled,
       replay,
+      ...(facilitator instanceof Blocky402Facilitator && facilitator.feePayer
+        ? { extra: { feePayer: facilitator.feePayer } }
+        : {}),
     });
     decodeGate = createX402Gate({
       facilitator,
       network: options.x402.network,
       asset: options.x402.asset,
+      assetDecimals: options.x402.assetDecimals,
       payTo: options.x402.payTo,
       price: options.x402.priceDecode,
       baseUrl: options.x402.baseUrl,
       logger,
       enabled: options.x402.enabled,
       replay,
+      ...(facilitator instanceof Blocky402Facilitator && facilitator.feePayer
+        ? { extra: { feePayer: facilitator.feePayer } }
+        : {}),
     });
   }
 
@@ -491,10 +500,11 @@ export async function createApiServerFromEnv(policy: PolicyDocument, env = proce
       : undefined,
     x402: {
       enabled: env.X402_ENABLED === 'true',
-      facilitatorUrl: env.X402_FACILITATOR_URL ?? 'https://facilitator.blocky402.io',
-      network: env.HEDERA_NETWORK === 'mainnet' ? 'hedera-mainnet' : 'hedera-testnet',
+      facilitatorUrl: env.X402_FACILITATOR_URL ?? 'https://api.testnet.blocky402.com',
+      network: env.HEDERA_NETWORK === 'mainnet' ? 'hedera:mainnet' : 'hedera:testnet',
       asset: env.HEDERA_USDC_TOKEN_ID ?? '0.0.429274',
-      payTo: env.HEDERA_ACCOUNT_ID ?? '0.0.0',
+      assetDecimals: Number(env.HEDERA_ASSET_DECIMALS ?? 6),
+      payTo: env.X402_PAY_TO ?? env.HEDERA_ACCOUNT_ID ?? '0.0.0',
       priceVerify: env.X402_PRICE_VERIFY_USDC ?? '0.01',
       priceDecode: env.X402_PRICE_DECODE_USDC ?? '0.005',
       baseUrl: env.API_PUBLIC_URL ?? 'http://localhost:8402',

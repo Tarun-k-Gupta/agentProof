@@ -37,7 +37,22 @@ export interface ResearcherOptions {
 
 export async function runResearcher(options: ResearcherOptions) {
   const logger = new ConsoleLogger('info');
-  const policy = options.policy;
+  // The facilitator is a payment venue like the router: same engine, same
+  // limits, explicitly allowlisted. Without this every payment BLOCKs — which
+  // is the safe default, but then no paid run could ever complete.
+  const facilitator = options.facilitator.toLowerCase() as Address;
+  // The service being paid (our own verification API treasury) is an explicit
+  // recipient like any other payee — same engine, same limits.
+  const serviceId = process.env.X402_PAY_TO ?? process.env.HEDERA_ACCOUNT_ID ?? '0.0.10447814';
+  const serviceEvm = `0x${BigInt(serviceId.split('.').pop() ?? '0').toString(16).padStart(40, '0')}` as Address;
+  const policy: PolicyDocument = {
+    ...options.policy,
+    policies: {
+      ...options.policy.policies,
+      allowedContracts: [...options.policy.policies.allowedContracts, facilitator],
+      allowedRecipients: [...options.policy.policies.allowedRecipients, serviceEvm],
+    },
+  };
 
   const account = new SimulatedAccount(
     policy.enforcement.account as Address,
@@ -64,7 +79,9 @@ export async function runResearcher(options: ResearcherOptions) {
     http: { postJson: async () => ({}) as never, getJson: async () => ({}) as never },
     signer: options.signer,
     logger,
-    maxPricePerCall: '0.05',
+    // Atomic units of the priced asset (tinybars for the HBAR demo, not
+    // display units): 1M tinybar ≈ $0.02. Revisit if the priced asset changes.
+    maxPricePerCall: '1000000',
     policyContext: {
       facilitator: options.facilitator,
       token: policy.asset.address,
