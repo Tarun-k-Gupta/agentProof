@@ -22,5 +22,12 @@
   "namespaceRegistry": "0xAA064fF33E8997a516F99fd3DCa2F7060727296a",
   "commitTx": "0xd90a2776fb6aa501034429599d5274e609178c4ed03bac0b864d737293b7bf16",
   "parentTx": "0xbb9ec4900cfdc80d3c0bf692bc56bbc59ed5f6bbf3f8744ecd678c18705667ff",
-  "namespaceResolver": "0x5D1247298C36a03Dc24855be38bFCA78bbB225cE"
+  "namespaceResolver": "0x5D1247298C36a03Dc24855be38bFCA78bbB225cE",
+  "policyRepointTxs": {
+    "_comment": "A live exercise of the owner-only policy repoint path (AgentSubnameRegistrar.setPolicyHash). The record was moved to a new hash and back again; the hook could not follow, because a live AgentPolicyHook cannot be replaced (see docs/future-work.md). Kept because it is the only on-chain proof that owner-only repointing works.",
+    "repointed": "0x517ac122effca617f1cee6ea096a286dd7f3f0b42c0f5fd9b781f72661589e6c",
+    "restored": "0xdc5b589783ab6698e5edc226953d634de996e90676d3101f3771726cf047e038",
+    "label": "trader",
+    "currentPolicyHash": "0xf40b489f2b7db3f668c1eac5c3734d10b4c9c2b653a9134cce6bbc2999556900"
+  }
 }

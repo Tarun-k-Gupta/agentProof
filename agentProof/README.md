@@ -42,7 +42,7 @@ AgentProof splits the job into two layers that fail independently:
 | Layer | Where it lives | What it knows | What it is trusted for |
 |---|---|---|---|
 | **L1 — SDK** (`@agentproof/sdk`) | Off-chain, in the agent's process | 7 policy types, historical spend, can ask a human | Good decisions, rich reasons, UX. **Bypassable by design — and we assume it will be.** |
-| **L2 — hook** (`AgentPolicyHook.sol`) | On-chain, inside the agent's smart account (ERC-7579) | 2 invariants + an allowlist | The actual limits. **Unbypassable** short of the owner key uninstalling it. |
+| **L2 — hook** (`AgentPolicyHook.sol`) | On-chain, inside the agent's smart account (ERC-7579) | 2 invariants + an allowlist | The actual limits. **Unbypassable**, and on the deployed account not removable either — see T8. |
 
 An analogy: the SDK is the responsible co-pilot who reads the map and warns you. The hook is the guardrail on the mountain road. You want both, but only one of them works when the driver is asleep.
 
@@ -277,7 +277,9 @@ Full version in `docs/threat-model.md`.
 | T5 | Salami slicing | daily cumulative accumulator | SDK + hook |
 | T6 | UTC-day boundary gaming | **accepted**, documented, not fixed | — |
 | T7 | Policy tampering by the agent | ENS EAC roles + owner-only writes + 3-way hash binding | identity + startup |
-| T8 | Malicious module uninstall | requires the owner validator | account config |
+| T8 | Malicious module uninstall | blocked by the hook itself: uninstalling executes against the account, and the account is not an allowed target | account config |
+
+On T8, confirmed on Sepolia rather than argued: `scripts/install-hook.ts` reverts during estimation with `TargetNotAllowed(account)` against a live install. `uninstallModule` is `withHook` on MSAAdvanced, so a direct call re-enters the same check. The agent cannot remove its own guardrails — and neither can anyone else on this account, which also means the installed policy is fixed for the life of the account. See `docs/future-work.md`, "A live policy hook cannot be replaced".
 
 Known gaps (with one-line mitigations in the demo config: single asset, single router, no batching): see §5.
 
