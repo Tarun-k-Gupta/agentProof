@@ -29,4 +29,3 @@ subgraphs/*/build/
 # Next.js build output
 .next/
 next-env.d.ts
-.env.example

@@ -263,6 +263,8 @@ function textNode(tag, className, text) {
 
 function clearEmpty(container) {
   if (container.querySelector('.empty')) container.textContent = '';
+}
+
 const POLICY_NAMES = {
   allowlist: 'Allowlist — contract & recipient',
   maxTransaction: 'Max transaction',
@@ -274,24 +276,60 @@ const POLICY_NAMES = {
   allowedRecipients: 'Allowlisted recipient',
 };
 
-function verdictCell(decision, provenance) {
-  if (decision === 'ALLOW') return `<span class="pass">pass</span>${prov(provenance)}`;
-  if (decision === 'REQUIRE_APPROVAL') return `<span class="hold">approval</span>`;
-  return `<span class="fail">fail</span>${prov(provenance)}`;
+function renderChecksTable(node, checks, nameOf) {
+  if (!Array.isArray(checks) || checks.length === 0) return;
+  const table = document.createElement('table');
+  for (const c of checks) {
+    const tr = document.createElement('tr');
+    tr.append(textNode('td', 'name', nameOf(c)));
+    const verdict = document.createElement('td');
+    verdict.className = 'verdict';
+    const mark = document.createElement('span');
+    if (c.decision === 'ALLOW') {
+      mark.className = 'pass';
+      mark.textContent = 'pass';
+    } else if (c.decision === 'REQUIRE_APPROVAL') {
+      mark.className = 'hold';
+      mark.textContent = 'approval';
+    } else {
+      mark.className = 'fail';
+      mark.textContent = 'fail';
+    }
+    verdict.append(mark);
+    if (c.provenance) verdict.append(textNode('span', 'prov', c.provenance));
+    tr.append(verdict);
+    table.append(tr);
+  }
+  node.append(table);
 }
-const prov = (p) => (p ? `<span class="prov">${p}</span>` : '');
 
-function renderChecks(checks) {
-  if (!Array.isArray(checks) || checks.length === 0) return '';
-  const rows = checks
-    .map(
-      (c) => `<tr>
-        <td class="name">${POLICY_NAMES[c.policy] ?? c.policy}</td>
-        <td class="verdict">${verdictCell(c.decision, c.provenance)}</td>
-      </tr>`,
-    )
-    .join('');
-  return `<table>${rows}</table>`;
+function buildProofLine(proof) {
+  const line = document.createElement('div');
+  line.className = 'proof-line';
+  line.dataset.proof = encodeURIComponent(JSON.stringify(proof));
+  line.append(
+    textNode('span', '', `invariant ${proof.property}: `),
+    textNode('span', `status ${proof.status}`, proof.status),
+    textNode('span', 'mono', `(${proof.tool}, ${proof.solverTimeMs} ms)`),
+    textNode('span', 'chevron', 'details ›'),
+  );
+  return line;
+}
+
+function buildTxLine(result) {
+  const line = document.createElement('div');
+  line.className = 'proof-line mono';
+  if (result.explorerUrl) {
+    const link = document.createElement('a');
+    link.href = result.explorerUrl;
+    link.target = '_blank';
+    link.rel = 'noreferrer noopener';
+    link.textContent = `tx ${short(result.txHash)} ›`;
+    line.append(link);
+  } else {
+    line.append(textNode('span', '', `tx ${short(result.txHash)}`));
+  }
+  return line;
 }
 
 function renderDecision(result) {
@@ -299,47 +337,17 @@ function renderDecision(result) {
   const node = document.createElement('div');
   node.className = `decision ${kind}`;
 
+  const proofLine = result.proof ? buildProofLine(result.proof) : null;
+  const txLine = result.txHash ? buildTxLine(result) : null;
+
   node.append(
     textNode('span', `chip ${kind}`, result.decision),
     textNode('div', 'summary', result.intent?.summary ?? ''),
     textNode('div', 'reason', result.reason ?? ''),
   );
-
-  if (result.proof) {
-    node.append(
-      textNode(
-        'div',
-        'proof',
-        `invariant ${result.proof.property}: ${result.proof.status} (${result.proof.tool}, ${result.proof.solverTimeMs} ms)`,
-      ),
-    );
-  }
-
-  if (result.txHash) node.append(textNode('div', 'proof mono', `tx ${result.txHash}`));
-  const proofLine = result.proof
-    ? `<div class="proof-line" data-proof='${encodeURIComponent(JSON.stringify(result.proof))}'>
-         invariant ${result.proof.property}:
-         <span class="status ${result.proof.status}">${result.proof.status}</span>
-         <span class="mono">(${result.proof.tool})</span>
-         <span class="chevron">details ›</span>
-       </div>`
-    : '';
-
-  const tx = result.txHash
-    ? `<div class="proof-line mono">${
-        result.explorerUrl
-          ? `<a href="${result.explorerUrl}" target="_blank" rel="noopener">tx ${short(result.txHash)} ›</a>`
-          : `tx ${short(result.txHash)}`
-      }</div>`
-    : '';
-
-  node.innerHTML = `
-    <span class="chip ${kind}">${result.decision}</span>
-    <div class="summary">${result.intent?.summary ?? ''}</div>
-    <div class="reason">${result.reason ?? ''}</div>
-    ${renderChecks(result.checks)}
-    ${proofLine}
-    ${tx}`;
+  renderChecksTable(node, result.checks, (c) => POLICY_NAMES[c.policy] ?? c.policy);
+  if (proofLine) node.append(proofLine);
+  if (txLine) node.append(txLine);
 
   if (result.policyRows?.length) {
     const table = document.createElement('table');
@@ -385,31 +393,45 @@ function renderThought(entry) {
   const node = document.createElement('div');
   node.className = 'thought';
   node.append(textNode('p', '', entry.reasoning), textNode('p', 'meta', entry.proposal ?? ''));
-  node.innerHTML = `<p>${entry.reasoning ?? ''}</p><p class="meta">${entry.proposal ?? ''}</p>`;
   const container = el('reasoning');
   clearEmpty(container);
   container.prepend(node);
 }
 
 function renderIdentity(entry) {
-  let badge;
-  if (entry.matchesLocal === false) badge = '<span class="bad">binding mismatch</span>';
-  else if (entry.verified) badge = '<span class="ok">binding verified on-chain</span>';
-  else badge = '<span class="hold">local policy — not resolved on-chain in this run</span>';
-
   const node = document.createElement('div');
   node.className = 'identity';
-  node.innerHTML = `
-    <div class="title">${entry.name ?? 'agent'} — ${badge}</div>
-    <dl>
-      <dt>account</dt><dd>${entry.account ?? '—'}</dd>
-      <dt>policy</dt><dd>${entry.policyHash ?? '—'}</dd>
-      <dt>hook</dt><dd>${entry.hook ?? '—'}</dd>
-      <dt>status</dt><dd>${entry.status ?? '—'}</dd>
-      <dt>resolved</dt><dd>${entry.resolvedVia ?? '—'}</dd>
-    </dl>`;
-  el('identity').innerHTML = '';
-  el('identity').appendChild(node);
+
+  const title = document.createElement('div');
+  title.className = 'title';
+  title.append(textNode('span', '', `${entry.name ?? 'agent'} — `));
+  const badge = document.createElement('span');
+  if (entry.matchesLocal === false) {
+    badge.className = 'bad';
+    badge.textContent = 'binding mismatch';
+  } else if (entry.verified) {
+    badge.className = 'ok';
+    badge.textContent = 'binding verified on-chain';
+  } else {
+    badge.className = 'hold';
+    badge.textContent = 'local policy — not resolved on-chain in this run';
+  }
+  title.append(badge);
+  node.append(title);
+
+  const list = document.createElement('dl');
+  for (const [term, value] of [
+    ['account', entry.account ?? '—'],
+    ['policy', entry.policyHash ?? '—'],
+    ['hook', entry.hook ?? '—'],
+    ['status', entry.status ?? '—'],
+    ['resolved', entry.resolvedVia ?? '—'],
+  ]) {
+    list.append(textNode('dt', '', term), textNode('dd', '', value));
+  }
+  node.append(list);
+
+  el('identity').replaceChildren(node);
 }
 
 function renderGauge() {
@@ -447,27 +469,17 @@ function renderApproval(request) {
 
   const row = document.createElement('div');
   row.className = 'approve-row';
-  const approve = textNode('button', '', 'Approve');
-  approve.dataset.approve = 'yes';
-  const decline = textNode('button', '', 'Decline');
-  decline.dataset.approve = 'no';
-  row.append(approve, decline);
+  if (request.interactive === false) {
+    row.append(textNode('div', '', "Waiting for the operator in the agent's terminal…"));
+  } else {
+    const approve = textNode('button', '', 'Approve');
+    approve.dataset.approve = 'yes';
+    const decline = textNode('button', '', 'Decline');
+    decline.dataset.approve = 'no';
+    row.append(approve, decline);
+  }
   node.append(row);
   node.dataset.id = request.id;
-
-  const control =
-    request.interactive === false
-      ? `<div class="approve-row">Waiting for the operator in the agent's terminal…</div>`
-      : `<div class="approve-row">
-           <button data-approve="yes">Approve</button>
-           <button data-approve="no">Decline</button>
-         </div>`;
-
-  node.innerHTML = `
-    <span class="chip approval">APPROVAL NEEDED</span>
-    <div class="summary">${request.intent?.summary ?? ''}</div>
-    <div class="reason">${request.reason ?? ''}</div>
-    ${control}`;
 
   node.querySelectorAll('button').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -519,49 +531,64 @@ const FORMULAS = {
   DAILY_SPEND: 'Σ(outflow within one UTC day) ≤ dailyLimit',
 };
 
-function drawerContent(focusProperty) {
+function buildDrawerBody(focusProperty) {
   const proofs = proofData.proofs ?? [];
+  const body = document.createDocumentFragment();
   if (proofs.length === 0) {
-    return `<p class="empty">No proof artifacts loaded. Run <span class="mono">pnpm verify:formal</span> to
-      produce <span class="mono">proofs/*.json</span>. Until then the SDK reports NOT_RUN — it never
-      claims a proof it does not have.</p>`;
+    const empty = textNode('p', 'empty', 'No proof artifacts loaded. Run ');
+    empty.append(textNode('span', 'mono', 'pnpm verify:formal'), textNode('span', '', ' to produce '), textNode('span', 'mono', 'proofs/*.json'));
+    body.append(empty);
+    return body;
   }
 
-  const cards = proofs
-    .map((p) => {
-      const focused = focusProperty && p.property === focusProperty ? ' style="border-color:var(--teal)"' : '';
-      return `<div class="prop"${focused}>
-        <div><span class="name">${p.property}</span> &nbsp;
-          <span class="status ${p.status}">${p.status}</span></div>
-        <div class="meta">${p.tool}${p.solverTimeMs ? ` · ${(p.solverTimeMs / 1000).toFixed(1)}s solver time` : ''} · ${p.artifactPath ?? ''}</div>
-        <div class="formula mono">${FORMULAS[p.property] ?? ''}</div>
-        ${p.counterexample ? `<pre>${escapeHtml(p.counterexample)}</pre>` : ''}
-      </div>`;
-    })
-    .join('');
+  for (const p of proofs) {
+    const card = document.createElement('div');
+    card.className = 'prop';
+    if (focusProperty && p.property === focusProperty) card.style.borderColor = 'var(--teal)';
+    const head = document.createElement('div');
+    head.append(textNode('span', 'name', p.property), textNode('span', '', '  '), textNode('span', `status ${p.status}`, p.status));
+    const meta = textNode(
+      'div',
+      'meta',
+      `${p.tool}${p.solverTimeMs ? ` · ${(p.solverTimeMs / 1000).toFixed(1)}s solver time` : ''} · ${p.artifactPath ?? ''}`,
+    );
+    card.append(head, meta, textNode('div', 'formula mono', FORMULAS[p.property] ?? ''));
+    if (p.counterexample) card.append(textNode('pre', '', p.counterexample));
+    body.append(card);
+  }
 
   const nc = proofData.negativeControl;
-  const ncBlock = nc
-    ? `<div class="negctl">
-         <div class="name">Negative control — ${nc.contract}</div>
-         <div class="meta">${
-           nc.counterexampleProduced
-             ? 'The deliberately broken spec was rejected, so the checker is really running.'
-             : '⚠ The broken spec verified cleanly. The checker is inert and every PROVEN above is decoration.'
-         }</div>
-         ${nc.counterexample ? `<pre>${escapeHtml(nc.counterexample)}</pre>` : ''}
-       </div>`
-    : '';
+  if (nc) {
+    const block = document.createElement('div');
+    block.className = 'negctl';
+    block.append(textNode('div', 'name', `Negative control — ${nc.contract}`));
+    block.append(
+      textNode(
+        'div',
+        'meta',
+        nc.counterexampleProduced
+          ? 'The deliberately broken spec was rejected, so the checker is really running.'
+          : '⚠ The broken spec verified cleanly. The checker is inert and every PROVEN above is decoration.',
+      ),
+    );
+    if (nc.counterexample) block.append(textNode('pre', '', nc.counterexample));
+    body.append(block);
+  }
 
-  const verdict = proofData.allProven
-    ? '<p class="note">Every checked property verified, and the negative control was rejected.</p>'
-    : '<p class="note">A proof only proves the specification we wrote, under the model checked.</p>';
-
-  return cards + ncBlock + verdict;
+  body.append(
+    textNode(
+      'p',
+      'note',
+      proofData.allProven
+        ? 'Every checked property verified, and the negative control was rejected.'
+        : 'A proof only proves the specification we wrote, under the model checked.',
+    ),
+  );
+  return body;
 }
 
 function openDrawer(focusProperty) {
-  el('drawer-body').innerHTML = drawerContent(focusProperty);
+  el('drawer-body').replaceChildren(buildDrawerBody(focusProperty));
   el('drawer').classList.add('open');
   el('drawer').setAttribute('aria-hidden', 'false');
   el('drawer-scrim').classList.add('open');
@@ -575,9 +602,6 @@ el('verify-btn').addEventListener('click', () => openDrawer());
 el('drawer-close').addEventListener('click', closeDrawer);
 el('drawer-scrim').addEventListener('click', closeDrawer);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
-
-const escapeHtml = (s) =>
-  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function paintVerifyDot() {
   const dot = el('verify-dot');
