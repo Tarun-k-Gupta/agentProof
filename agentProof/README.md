@@ -417,7 +417,7 @@ Supporting commands: `pnpm verify:deployment` (bytecode + activity check over `d
 
 To expose the API on a public hostname — which the Bazantic recipe and the deployed console both need — run `bash scripts/tunnel.sh`. It opens a Cloudflare quick tunnel, checks it end to end, and rewrites `API_PUBLIC_URL` here and in the table above, because a quick tunnel gets a new hostname every time it starts.
 
-For recording: `docs/demo-script.md` is the narration, `docs/showcase.md` is the run sheet around it — boot order, pre-flight checks, and the claims that have to stay precise.
+For recording: `docs/final-script.md` is the script to read, start to finish. `docs/showcase.md` is the run sheet around it — boot order, pre-flight checks, alternate sponsor cuts, and the claims that have to stay precise. `docs/demo-script.md` is the earlier three-minute draft the final script grew out of.
 
 ---
 
