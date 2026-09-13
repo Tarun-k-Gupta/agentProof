@@ -7,8 +7,16 @@
  * which would mean the API maintaining an allowlist of dashboard origins and
  * getting it right. Same-origin through a rewrite costs one config block and
  * removes the entire question.
+ *
+ * The proxy target is resolved at build time, so a deployed build needs it in
+ * the environment before the build runs, not after. `AGENTPROOF_API_URL` is
+ * the explicit setting; `API_PUBLIC_URL` is the fallback because a deployment
+ * that has published a reachable API address has already answered the question
+ * of where the API lives. The loopback default is for `next dev` only — it is
+ * a guaranteed 502 anywhere the API is not on the same host.
  */
-const API = process.env.AGENTPROOF_API_URL ?? 'http://127.0.0.1:8402';
+const API =
+  process.env.AGENTPROOF_API_URL ?? process.env.API_PUBLIC_URL ?? 'http://127.0.0.1:8402';
 
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';

@@ -21,7 +21,8 @@ import { PaymentRefused, X402Client, hederaSigner } from '@agentproof/x402-clien
  * demo, not hang it.
  */
 
-const API = process.env.AGENTPROOF_API_URL ?? 'http://127.0.0.1:8402';
+const API =
+  process.env.AGENTPROOF_API_URL ?? process.env.API_PUBLIC_URL ?? 'http://127.0.0.1:8402';
 
 export const dynamic = 'force-dynamic';
 // Node runtime: the edge runtime imposes its own response deadline, and the
