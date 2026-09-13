@@ -42,7 +42,7 @@ AgentProof splits the job into two layers that fail independently:
 | Layer | Where it lives | What it knows | What it is trusted for |
 |---|---|---|---|
 | **L1 — SDK** (`@agentproof/sdk`) | Off-chain, in the agent's process | 7 policy types, historical spend, can ask a human | Good decisions, rich reasons, UX. **Bypassable by design — and we assume it will be.** |
-| **L2 — hook** (`AgentPolicyHook.sol`) | On-chain, inside the agent's smart account (ERC-7579) | 2 invariants + an allowlist | The actual limits. **Unbypassable** short of the owner key uninstalling it. |
+| **L2 — hook** (`AgentPolicyHook.sol`) | On-chain, inside the agent's smart account (ERC-7579) | 2 invariants + an allowlist | The actual limits. **Unbypassable**, and on the deployed account not removable either — see T8. |
 
 An analogy: the SDK is the responsible co-pilot who reads the map and warns you. The hook is the guardrail on the mountain road. You want both, but only one of them works when the driver is asleep.
 
@@ -137,7 +137,7 @@ In words:
 | Verification API | `packages/api/` — `node:http`, no framework | x402-gated `POST /v1/verify`, streams runs to the dashboard |
 | Payment client | `packages/x402-client/` | Pays for verification, policy-checks its own payment first (the loop closes) |
 | Agents | `apps/agents/trader`, `apps/agents/researcher` | Demo consumers of the SDK |
-| Dashboard | `apps/dashboard/` (Next.js) | Read-only control plane + approval UI + proof drawer |
+| Console | `apps/console/` (Next.js) | Architecture map, live policy bench, operator view, deployed-artifact evidence |
 | Subgraph | `subgraphs/agent-history/` | Indexes `SpendRecorded` events |
 | Recipes | `recipes/verify-before-you-swap.ts` | Gateway integration that imports nothing internal |
 
@@ -277,7 +277,9 @@ Full version in `docs/threat-model.md`.
 | T5 | Salami slicing | daily cumulative accumulator | SDK + hook |
 | T6 | UTC-day boundary gaming | **accepted**, documented, not fixed | — |
 | T7 | Policy tampering by the agent | ENS EAC roles + owner-only writes + 3-way hash binding | identity + startup |
-| T8 | Malicious module uninstall | requires the owner validator | account config |
+| T8 | Malicious module uninstall | blocked by the hook itself: uninstalling executes against the account, and the account is not an allowed target | account config |
+
+On T8, confirmed on Sepolia rather than argued: `scripts/install-hook.ts` reverts during estimation with `TargetNotAllowed(account)` against a live install. `uninstallModule` is `withHook` on MSAAdvanced, so a direct call re-enters the same check. The agent cannot remove its own guardrails — and neither can anyone else on this account, which also means the installed policy is fixed for the life of the account. See `docs/future-work.md`, "A live policy hook cannot be replaced".
 
 Known gaps (with one-line mitigations in the demo config: single asset, single router, no batching): see §5.
 
@@ -314,14 +316,16 @@ pnpm contracts:test    # 32 Foundry tests, incl. Gate G1 against a real 7579 acc
 pnpm verify:formal     # SMTChecker: MAX_TRANSFER + DAILY_SPEND, plus the negative control
 ```
 
-The demo runs against `SimulatedAccount`, an in-process model of the account and hook. For the dashboard, run the API and UI side by side:
+The demo runs against `SimulatedAccount`, an in-process model of the account and hook. For the web console, run the API and UI side by side:
 
 ```bash
 AGENTPROOF_ADMIN_TOKEN=… pnpm api    # :8402  the Verification API
-pnpm dashboard                        # :3000  the Next.js control plane
+pnpm console                          # :3000  the Next.js console
 ```
 
-The dashboard proxies the API through a Next rewrite (same-origin cookie, no CORS negotiation). The approval step pauses in the demo terminal — approve there and the dashboard card updates. `AGENTPROOF_AUTO_APPROVE=true` for hands-free, `AGENTPROOF_DASHBOARD=off` to skip streaming.
+The console proxies the API through a Next rewrite (same-origin cookie, no CORS negotiation), except `/v1/verify`, which has its own route handler: an escalated action holds that request open until a human answers, and the rewrite proxy gives up at 30 seconds.
+
+An action at the approval threshold pauses in the browser — approve or decline it on **Try it yourself**, or watch the deadline expire, which refuses it. `AGENTPROOF_APPROVAL_TIMEOUT_MS` sets that deadline (default 60s). `AGENTPROOF_AUTO_APPROVE=true` for a hands-free terminal run, `AGENTPROOF_DASHBOARD=off` to skip streaming.
 
 Against real Sepolia (identical steps — same policy file, same bypass, same revert):
 
@@ -379,7 +383,7 @@ packages/sdk/          @agentproof/sdk — the product. Zero runtime dependencie
   tests/fixtures/      real Sepolia calldata, each entry naming its tx hash
 packages/api/          the Verification API, x402-gated, node:http, no framework
 packages/x402-client/  payment client that policy-checks its own payments
-apps/dashboard/        Next.js split-pane control plane. Reads only, bar approval.
+apps/console/          Next.js console: what it does, try it, watch it run, receipts.
 apps/agents/           trader (LangGraph) and researcher (x402)
 contracts/             AgentPolicyHook, PolicyLib, AgentSubnameRegistrar
   formal/              PolicySpec (proves) + PolicySpecBroken (must not)

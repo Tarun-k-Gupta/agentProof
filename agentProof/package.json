@@ -22,8 +22,8 @@
     "verify:deployment": "tsx scripts/verify-deployment.ts",
     "capture:uniswap-fixtures": "tsx scripts/capture-uniswap-fixtures.ts",
     "recipe:verify-before-you-swap": "tsx recipes/verify-before-you-swap.ts",
-    "dashboard": "pnpm --filter @agentproof/dashboard dev",
-    "dashboard:build": "pnpm --filter @agentproof/dashboard build"
+    "console": "pnpm --filter @agentproof/console dev",
+    "console:build": "pnpm --filter @agentproof/console build"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

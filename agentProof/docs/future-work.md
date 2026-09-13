@@ -94,6 +94,49 @@ campaign both describe the bucket semantics accurately. Moving to a rolling
 window is a policy-schema change, not just a hook change, because the limit's
 meaning changes.
 
+### A live policy hook cannot be replaced
+
+Confirmed on Sepolia, not theorised. `AgentPolicyHook.preCheck` rejects every
+execution whose target is not in `allowedTarget`. Uninstalling a module means
+executing against the account itself, and the account is not one of its own
+allowed targets — so `scripts/install-hook.ts` reverts during estimation with
+`TargetNotAllowed(0x67b9ee…d441)`. Calling `uninstallModule` directly is no
+different: on MSAAdvanced it carries `withHook`, so it re-enters the same check.
+`AgentPolicyHook` has no owner-only override, and `allowedTarget` is written
+only inside `onInstall`.
+
+This is the enforcement working. An agent's session key cannot remove its own
+guardrails, which is the property the whole design exists to provide. The cost
+is that the policy on `0x67B9Ee…D441` is now fixed for the life of the account:
+the three-way binding (file, ENS record, hook) can only be moved in two of its
+three legs, so the policy file and the ENS record must stay at
+`0xf40b489f…556900` to match the hook.
+
+Two ways out, neither free:
+
+- **Allowlist the account at install time.** Include the account in
+  `allowedContracts` so a future `uninstallModule` passes `preCheck`. This also
+  lets the session key call the account for anything else, including
+  uninstalling the hook — which gives back exactly the power the hook exists to
+  remove. It would want a target-plus-selector allowlist rather than a
+  target-only one.
+- **An owner-authorised replacement path on the hook.** `preCheck` cannot tell
+  which validator signed the UserOp, so this means a hook-level owner recorded
+  at install, and a bypass for the owner is still a bypass. It needs a written
+  threat-model argument before it is written as code.
+
+Until then, replacing a policy means deploying a new account: new address, new
+subgraph start block, new ENS registration.
+
+Worth separating from a bug this masked: nothing in the demo or the console
+actually needed a wider policy. Both were routing swap output to the
+enforcement account, which is not on its own recipient allowlist, so every swap
+failed the allowlist before reaching the limit it was meant to exercise. That
+was a caller bug, fixed in both. The hook's immovability is a real constraint;
+it was not the reason anything was failing.
+
+---
+
 ### The replay guard is per-process
 
 `ReplayGuard` stops an x402 payment payload from buying more than one call, in

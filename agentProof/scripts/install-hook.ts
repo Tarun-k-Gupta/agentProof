@@ -7,9 +7,20 @@
  * initCode and is installed here, afterwards, via a UserOp signed by the
  * session key (the on-chain validator accepts it; the point is the hook).
  *
- * Idempotent owner-update path: if a hook is already installed it is
- * uninstalled first, then the new config goes in. Policy evolution is a
- * first-class flow, not a redeploy.
+ * First install only. The uninstall-then-reinstall branch below cannot
+ * succeed against a live install, and this was written before anyone tried:
+ *
+ *   Uninstalling means executing against the account itself, and
+ *   AgentPolicyHook.preCheck rejects every execution whose target is not in
+ *   allowedTarget. The account is not one of its own allowed targets, so the
+ *   UserOp reverts with TargetNotAllowed(account) during estimation. Calling
+ *   uninstallModule directly does not help either — on MSAAdvanced it is
+ *   `withHook`, so it re-enters the same preCheck.
+ *
+ * That is the enforcement working: an agent's session key cannot remove its
+ * own guardrails. The cost is that policy evolution on an account whose
+ * install did not allowlist the account itself needs a redeploy. See
+ * docs/future-work.md, "A live policy hook cannot be replaced".
  *
  *   set -a; source .env; set +a; pnpm tsx scripts/install-hook.ts
  *
@@ -97,6 +108,23 @@ const alreadyRaw = await chain
 const already = alreadyRaw.slice(-64) === '1'.padStart(64, '0');
 
 if (already) {
+  // Refuse rather than submit a UserOp that cannot pass estimation. The hook
+  // rejects any execution whose target is not allowlisted, and uninstalling
+  // means executing against the account — so this reverts with
+  // TargetNotAllowed(account) every time, after spending the round trip.
+  const selfAllowed = await chain
+    .call(hook, `${toFunctionSelector('allowedTarget(address,address)')}${account.slice(2).padStart(64, '0')}${account.slice(2).padStart(64, '0')}` as Hex)
+    .catch(() => '0x');
+
+  if (selfAllowed.slice(-64) !== '1'.padStart(64, '0')) {
+    throw new Error(
+      `AgentPolicyHook is already installed on ${account} and cannot be replaced: the account is not one of ` +
+        `its own allowed targets, so uninstallModule reverts with TargetNotAllowed(${account}). ` +
+        `An agent's session key cannot remove its own guardrails — that is the point. ` +
+        `Replacing the policy on this account needs a redeploy; see docs/future-work.md.`,
+    );
+  }
+
   console.log('hook installed — uninstalling first (owner update)');
   const uninstallCall = encodeFunctionData({
     abi: accountAbi,

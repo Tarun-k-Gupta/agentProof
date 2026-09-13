@@ -56,8 +56,25 @@ export interface ProofReference {
   counterexample?: string;
 }
 
+/** Present only when the action escalated and a human (or a timeout) answered. */
+export interface ApprovalOutcomeWire {
+  requested: true;
+  approved: boolean;
+  /** 'dashboard:owner' | 'dashboard:timeout' | … */
+  by: string;
+}
+
+/** Set by the console's verify route when it answered a 402 on your behalf. */
+export interface SettlementWire {
+  paid: boolean;
+  /** Hedera transaction id, e.g. 0.0.7162784@1789243945.960162854 */
+  transactionId?: string;
+}
+
 export interface Verdict {
   decision: Decision;
+  approval?: ApprovalOutcomeWire;
+  settlement?: SettlementWire;
   reason?: string;
   violations: PolicyViolation[];
   policyRows: PolicyRow[];

@@ -11,7 +11,8 @@
     "./calldata": "./src/testing/calldata.ts",
     "./decode/uniswap": "./src/decode/uniswapV4.ts",
     "./testing": "./src/testing/SimulatedAccount.ts",
-    "./adapters": "./src/adapters/index.ts"
+    "./adapters": "./src/adapters/index.ts",
+    "./decode/x402": "./src/decode/x402.ts"
   },
   "files": [
     "dist",

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { runResearcher, stubSigner } from './index.ts';
-import { hederaSigner } from './hederaSigner.ts';
+import { hederaSigner } from '@agentproof/x402-client';
 import type { Address, PolicyDocument } from '@agentproof/sdk';
 
 /**

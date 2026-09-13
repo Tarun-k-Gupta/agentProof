@@ -1,5 +1,11 @@
 import type { Action, Address, HttpClient, Logger } from '@agentproof/sdk';
-import { x402PaymentAction } from '@agentproof/sdk';
+// Subpath, not the barrel. The barrel reaches ledger.ts, whose dynamic import
+// of the transport cannot be statically bundled — pulling it into a Next route
+// handler fails the build. x402PaymentAction needs two small utils and nothing
+// else, so the deep import costs nothing and keeps this package bundleable.
+import { x402PaymentAction } from '@agentproof/sdk/decode/x402';
+
+export { hederaSigner } from './hedera.ts';
 
 /**
  * x402 client.
