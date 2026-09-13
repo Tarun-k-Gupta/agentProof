@@ -20,7 +20,7 @@ The source of truth is `deployments/*.json`, read directly by the SDK, the API a
 |---|---|---|
 | Subgraph query endpoint | [`agentproof-agent-history` v0.0.2-live-hook](https://api.studio.thegraph.com/query/1760028/agentproof-agent-history/v0.0.2-live-hook) | Indexes the hook's own events from block 11684190 |
 | x402 facilitator | [api.testnet.blocky402.com](https://api.testnet.blocky402.com) | The API refuses to start unless `/supported` advertises `hedera-testnet` with `scheme=exact` |
-| Verification API (public) | `https://tackle-assumes-genetics-sur.trycloudflare.com` | **Ephemeral.** A Cloudflare quick tunnel to a locally-run API — a fresh hostname on every restart. This is how the Bazantic gateway recipe reaches it; it is not stable infrastructure and is not presented as such. |
+| Verification API (public) | `https://truth-webshots-ppc-birthday.trycloudflare.com` | **Ephemeral.** A Cloudflare quick tunnel to a locally-run API — a fresh hostname on every restart. This is how the Bazantic gateway recipe reaches it; it is not stable infrastructure and is not presented as such. |
 
 ### Ethereum Sepolia — chain 11155111
 
@@ -414,6 +414,10 @@ AGENTPROOF_LIVE=true SEPOLIA_RPC_URL=… BUNDLER_URL=… AGENT_SESSION_KEY=… S
 Incomplete config falls back to the simulator *loudly*. A demo that silently degrades to fake transactions is worse than one that says it is simulated.
 
 Supporting commands: `pnpm verify:deployment` (bytecode + activity check over `deployments/`), `pnpm capture:uniswap-fixtures` (refresh Sepolia decoder fixtures), `pnpm recipe:verify-before-you-swap`. See `docs/quickstart.md` and `docs/integrations/bazantic.md`.
+
+To expose the API on a public hostname — which the Bazantic recipe and the deployed console both need — run `bash scripts/tunnel.sh`. It opens a Cloudflare quick tunnel, checks it end to end, and rewrites `API_PUBLIC_URL` here and in the table above, because a quick tunnel gets a new hostname every time it starts.
+
+For recording: `docs/demo-script.md` is the narration, `docs/showcase.md` is the run sheet around it — boot order, pre-flight checks, and the claims that have to stay precise.
 
 ---
 
