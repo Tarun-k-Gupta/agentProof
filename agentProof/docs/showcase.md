@@ -11,10 +11,23 @@ approval-expiry beat runs on a real clock and will not hurry for you.
 
 ## 1. Boot order
 
-Four terminals. The order matters — each one checks the one before it.
+Four terminals, and the order is not arbitrary — two of these processes bake a
+value in at startup that they cannot pick up later.
 
 ```bash
-# 1 — API. Production mode, payment gate on, owner key deliberately absent.
+# 1 — tunnel FIRST.
+bash scripts/tunnel.sh
+```
+
+The API writes `API_PUBLIC_URL` into the `resource` field of its x402 payment
+challenge when it boots, so it has to know the hostname before it starts. A
+quick tunnel invents a new hostname every time it runs. Start the API first and
+its challenge advertises whatever the *last* tunnel was called — a hostname that
+no longer resolves — and it keeps doing so until you restart it. The script
+rewrites `.env` and the README table, then holds the tunnel open.
+
+```bash
+# 2 — API. Production mode, payment gate on, owner key deliberately absent.
 set -a; source .env; set +a
 unset OWNER_PRIVATE_KEY DEPLOYER_PRIVATE_KEY
 AGENTPROOF_APPROVAL_TIMEOUT_MS=20000 pnpm api
@@ -26,23 +39,27 @@ That refusal is a feature here: if it started, the chain of claims behind it
 holds.
 
 ```bash
-# 2 — public hostname for the API (needed only for the Bazantic beat)
-bash scripts/tunnel.sh
-```
-
-Rewrites `API_PUBLIC_URL` in `.env` and the README table to the fresh hostname,
-then holds the tunnel open. Quick tunnels get a new hostname on every start, so
-run this *after* the API and *before* the console.
-
-```bash
-# 3 — console
+# 3 — console. Note the sourced .env; this is not optional.
+set -a; source .env; set +a
+unset OWNER_PRIVATE_KEY DEPLOYER_PRIVATE_KEY
 pnpm console          # :3000
 ```
 
+`/api/v1/verify` is a route handler that pays the x402 gate itself, using the
+Hedera keys from the environment. Start the console with a bare `pnpm console`
+and it has no keys, cannot pay, forwards unpaid, and every click in the demo
+comes back **402** instead of a verdict. The page still loads, which is what
+makes this worth writing down — it looks fine until you click.
+
 ```bash
 # 4 — spare, for the Bazantic beat
-pnpm recipe:verify-before-you-swap
+AGENTPROOF_API_URL="$(grep '^API_PUBLIC_URL=' .env | cut -d= -f2-)" \
+  pnpm recipe:verify-before-you-swap
 ```
+
+The recipe reads `AGENTPROOF_API_URL`, which in `.env` points at loopback. Pass
+the public hostname explicitly or the beat exercises the local path while you
+narrate the public one.
 
 ## 2. Pre-flight — check all six before recording
 
@@ -52,7 +69,9 @@ pnpm recipe:verify-before-you-swap
    means the proof artifacts are missing — `pnpm verify:formal` regenerates
    them, and it is not a two-minute job, so check this early.
 3. One throwaway verify click, then reload. The first x402 settlement is
-   noticeably slower than the rest and you do not want that on tape.
+   noticeably slower than the rest and you do not want that on tape. Confirm
+   the response carries `settlement.paid: true` — a `402` here means the
+   console was started without the payer keys (see step 3 above).
 4. The Integrations panel shows the public API link — proof the tunnel is
    actually wired through, not just open.
 5. Explorer tabs pre-opened on the hook and the smart account. Loading
