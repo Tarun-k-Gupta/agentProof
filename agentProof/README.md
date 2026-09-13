@@ -8,8 +8,84 @@ Give an AI agent a wallet and it will eventually do something its owner never in
 
 ---
 
+## Deployed addresses and live links
+
+Every claim in this README that involves a deployed thing resolves to something below. Nothing here requires our servers, our permission, or our word for it: open a block explorer and read the bytecode, query the subgraph, resolve the ENS name and hash the policy yourself. `pnpm verify:deployment` re-checks the Sepolia addresses with `eth_getCode` against a public node.
+
+The source of truth is `deployments/*.json`, read directly by the SDK, the API and the dashboard. This table is a copy for readers; if the two ever disagree, the JSON is right.
+
+### Live services
+
+| Surface | Address | Note |
+|---|---|---|
+| Subgraph query endpoint | [`agentproof-agent-history` v0.0.2-live-hook](https://api.studio.thegraph.com/query/1760028/agentproof-agent-history/v0.0.2-live-hook) | Indexes the hook's own events from block 11684190 |
+| x402 facilitator | [api.testnet.blocky402.com](https://api.testnet.blocky402.com) | The API refuses to start unless `/supported` advertises `hedera-testnet` with `scheme=exact` |
+| Verification API (public) | `https://tackle-assumes-genetics-sur.trycloudflare.com` | **Ephemeral.** A Cloudflare quick tunnel to a locally-run API — a fresh hostname on every restart. This is how the Bazantic gateway recipe reaches it; it is not stable infrastructure and is not presented as such. |
+
+### Ethereum Sepolia — chain 11155111
+
+The AgentProof contracts, then the third-party contracts they are pinned against. `verified` in `deployments/sepolia.json` records which of these were confirmed to hold bytecode, when, and by what method.
+
+| Contract | Address |
+|---|---|
+| **AgentPolicyHook** (the enforcement boundary) | [`0xEbB1c3Ae1b502409E64DAA908bd7EDe9cf267E59`](https://sepolia.etherscan.io/address/0xEbB1c3Ae1b502409E64DAA908bd7EDe9cf267E59) |
+| **Agent smart account** (MSAAdvanced, hook installed) | [`0x67B9Ee93208914fDD829fdAaF24E87D33f75d441`](https://sepolia.etherscan.io/address/0x67B9Ee93208914fDD829fdAaF24E87D33f75d441) |
+| Agent session key (holds `ROLE_SET_STATUS_RECORD` and nothing more) | [`0x9f360495a39AF26F6419dC21147633Cb056b10d9`](https://sepolia.etherscan.io/address/0x9f360495a39AF26F6419dC21147633Cb056b10d9) |
+| ERC-7579 account implementation (v0.3.1) | [`0x353983cB05c26883d284091B19f6fe9AD8c828AF`](https://sepolia.etherscan.io/address/0x353983cB05c26883d284091B19f6fe9AD8c828AF) |
+| Account factory | [`0xfceE41FD1332eB1CDb63a651351fE91cc68060a0`](https://sepolia.etherscan.io/address/0xfceE41FD1332eB1CDb63a651351fE91cc68060a0) |
+| Bootstrap | [`0xeDa82eD3D49e436D88A0148A72C61917e47E52f4`](https://sepolia.etherscan.io/address/0xeDa82eD3D49e436D88A0148A72C61917e47E52f4) |
+| Session validator | [`0xaBdBCE84aFd1CCD14a03ef78F55693daeE6052DB`](https://sepolia.etherscan.io/address/0xaBdBCE84aFd1CCD14a03ef78F55693daeE6052DB) |
+| EntryPoint v0.8.0 | [`0x0000000071727De22E5E9d8BAf0edAc6f37da032`](https://sepolia.etherscan.io/address/0x0000000071727De22E5E9d8BAf0edAc6f37da032) |
+| USDC (test) | [`0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`](https://sepolia.etherscan.io/address/0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238) |
+| Uniswap Universal Router (v4) | [`0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b`](https://sepolia.etherscan.io/address/0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b) |
+| Uniswap v4 PoolManager | [`0xE03A1074c86CFeDd5C142C4F04F1a1536e203543`](https://sepolia.etherscan.io/address/0xE03A1074c86CFeDd5C142C4F04F1a1536e203543) |
+| Permit2 | [`0x000000000022D473030F116dDEE9F6B43aC78BA3`](https://sepolia.etherscan.io/address/0x000000000022D473030F116dDEE9F6B43aC78BA3) |
+
+Deployed at block **11684190** — the subgraph's start block, so indexed history and deployed history begin at the same place.
+
+One address is listed in `deployments/sepolia.json` and deliberately **not** allowlisted: the pre-v4 Universal Router at `0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad`. It has bytecode, which is exactly why it survived for a while as *the* router in our config; no v4 pool routes through it. It is kept in the record as a note about how a plausible-looking address passes a bytecode check and is still wrong.
+
+### ENSv2 on Sepolia — the agent's public identity
+
+ENSv2 is beta and explicitly not final, so every address is pinned rather than resolved at runtime.
+
+| Thing | Address / value |
+|---|---|
+| Agent name | **`trader.agentproof.eth`** (parent `agentproof.eth`) |
+| Current policy hash (`text agentproof.policy`) | `0xf40b489f2b7db3f668c1eac5c3734d10b4c9c2b653a9134cce6bbc2999556900` |
+| AgentSubnameRegistrar | [`0xe7Eb688ef8cC36871E386E89eeDf1aaFec06B586`](https://sepolia.etherscan.io/address/0xe7Eb688ef8cC36871E386E89eeDf1aaFec06B586) |
+| PermissionedRegistry | [`0xBDC85dD5b15D7ecb354cd7cb6f2c50b4f2c4F0E2`](https://sepolia.etherscan.io/address/0xBDC85dD5b15D7ecb354cd7cb6f2c50b4f2c4F0E2) |
+| Namespace registry | [`0xAA064fF33E8997a516F99fd3DCa2F7060727296a`](https://sepolia.etherscan.io/address/0xAA064fF33E8997a516F99fd3DCa2F7060727296a) |
+| Namespace resolver | [`0x5D1247298C36a03Dc24855be38bFCA78bbB225cE`](https://sepolia.etherscan.io/address/0x5D1247298C36a03Dc24855be38bFCA78bbB225cE) |
+| Universal resolver | [`0x4A1817d13E9cF196f471725176355C1234b63C70`](https://sepolia.etherscan.io/address/0x4A1817d13E9cF196f471725176355C1234b63C70) |
+
+The transactions, because a claim about who is allowed to change a policy is only worth anything if you can watch it happen:
+
+| Transaction | What it shows |
+|---|---|
+| [Parent registration](https://sepolia.etherscan.io/tx/0xbb9ec4900cfdc80d3c0bf692bc56bbc59ed5f6bbf3f8744ecd678c18705667ff) | `agentproof.eth` under the permissioned registry |
+| [Commit](https://sepolia.etherscan.io/tx/0xd90a2776fb6aa501034429599d5274e609178c4ed03bac0b864d737293b7bf16) | The subname commitment |
+| [Policy repointed](https://sepolia.etherscan.io/tx/0x517ac122effca617f1cee6ea096a286dd7f3f0b42c0f5fd9b781f72661589e6c) | Owner moves `agentproof.policy` to a different hash |
+| [Policy restored](https://sepolia.etherscan.io/tx/0xdc5b589783ab6698e5edc226953d634de996e90676d3101f3771726cf047e038) | …and back again |
+
+That repoint pair is the only on-chain proof that owner-only repointing works. It is also honest about a limit: the hook could not follow, because a live `AgentPolicyHook` cannot be replaced. See `docs/future-work.md`.
+
+### Hedera testnet — payment and an audit log we don't own
+
+| Thing | Id |
+|---|---|
+| HCS audit topic | [`0.0.10483603`](https://hashscan.io/testnet/topic/0.0.10483603) |
+| Service account | [`0.0.10447814`](https://hashscan.io/testnet/account/0.0.10447814) |
+| Service pay-to account | [`0.0.10492857`](https://hashscan.io/testnet/account/0.0.10492857) |
+| Price per `/v1/verify` · `/v1/decode` | 0.00000090 · 0.00000040 HBAR |
+
+Two real paid settlements, not a mock: `0.0.7162784@1789188459.814401011` and `0.0.7162784@1789188460.374641418`. Every settlement is written to the HCS topic above — append-only, on infrastructure we do not control, which is the entire point of putting it there.
+
+---
+
 ## Contents
 
+0. [Deployed addresses and live links](#deployed-addresses-and-live-links)
 1. [What this is, in plain English](#1-what-this-is-in-plain-english)
 2. [A concrete example](#2-a-concrete-example)
 3. [Architecture](#3-architecture)
@@ -236,6 +312,8 @@ Reads and writes are deliberately asymmetric: every read the engine needs is an 
 ---
 
 ## 7. Sponsor integrations
+
+Every address and endpoint referenced below is listed, with explorer links, under [Deployed addresses and live links](#deployed-addresses-and-live-links).
 
 Six, each load-bearing rather than decorative. What is *built* vs *qualified* (needs external accounts/hardware/hosting) is tracked per-integration in `docs/future-work.md`.
 
