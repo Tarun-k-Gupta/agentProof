@@ -131,9 +131,10 @@ test happened to pick.
 If you are short on time, cut Ledger and Bazantic from the spoken list. Do not
 cut Hedera or the hook — they are the two that carry the thesis.
 
-### The 30-second cut
+### The 30-second cut — sponsors only
 
-When the sponsor block has to fit in half a minute, say exactly this. Roughly 90
+Use this when the `What it is` beat at 0:20 already introduced the SDK and the
+API, which is the default shape of the 3:30 run. Say exactly this. Roughly 90
 words, which lands at 30–33 seconds read at a normal pace. Do not improvise
 additions here — every clause below is calibrated to be literally true, and the
 obvious embellishments are the ones that stop being true.
@@ -159,6 +160,39 @@ Need it under 25 seconds: drop "not what was intended" from the Graph line and
 "logged to a topic we don't control" from Hedera. Keep the last sentence whole —
 "the two core limits" is the phrase that keeps the proof claim honest, and
 trimming it to "the limits are proven" makes it false.
+
+### The 40-second cut — with the SDK and the API
+
+Use this when the sponsor block is the *first* time the product itself gets
+named: a shorter overall video, a sponsor-track submission, or a standalone clip
+where nobody has seen the install snippet. Roughly 115 words, 38–42 seconds.
+
+> AgentProof ships two ways: an npm package, `@agentproof/sdk`, and an HTTP API
+> — `POST /v1/verify` — for agents that aren't in JavaScript. Same verdict from
+> both. And both are advisory by design: the limit itself lives on-chain, inside
+> the wallet.
+>
+> Underneath, four protocols, each load-bearing.
+>
+> **ENS v2** — the agent's limits are published under its own name,
+> `trader.agentproof.eth`. Anyone can check them without asking us.
+>
+> **The Graph** — a subgraph of what the chain actually admitted.
+>
+> **Hedera** — the API is paid. Every verdict you just watched settled on
+> Hedera, logged to a topic we don't control.
+>
+> **Bazantic** — someone else's gateway calling our check over plain HTTP. No
+> verification, no swap.
+>
+> And the two core limits aren't just tested — they're proven with the SMT
+> checker, for every possible input.
+
+"Advisory by design" is the load-bearing phrase and it is worth the two seconds.
+Without it the SDK sounds like the product and the hook sounds like an
+implementation detail, which is the entire argument backwards. The API is the
+same: it is a paid, convenient way to get a good answer, and it is not the
+boundary.
 
 
 ## 5. Claims to keep precise
