@@ -131,6 +131,36 @@ test happened to pick.
 If you are short on time, cut Ledger and Bazantic from the spoken list. Do not
 cut Hedera or the hook — they are the two that carry the thesis.
 
+### The 30-second cut
+
+When the sponsor block has to fit in half a minute, say exactly this. Roughly 90
+words, which lands at 30–33 seconds read at a normal pace. Do not improvise
+additions here — every clause below is calibrated to be literally true, and the
+obvious embellishments are the ones that stop being true.
+
+> Four protocols, each load-bearing.
+>
+> **ENS v2** — the agent's limits are published under its own name,
+> `trader.agentproof.eth`. Anyone can check them without asking us.
+>
+> **The Graph** — a subgraph of what the chain actually admitted, not what was
+> intended.
+>
+> **Hedera** — the API is paid. Every verdict you just watched settled on
+> Hedera, logged to a topic we don't control.
+>
+> **Bazantic** — someone else's gateway calling our check over plain HTTP. No
+> verification, no swap.
+>
+> And the two core limits aren't just tested — they're proven with the SMT
+> checker, for every possible input.
+
+Need it under 25 seconds: drop "not what was intended" from the Graph line and
+"logged to a topic we don't control" from Hedera. Keep the last sentence whole —
+"the two core limits" is the phrase that keeps the proof claim honest, and
+trimming it to "the limits are proven" makes it false.
+
+
 ## 5. Claims to keep precise
 
 These are the ones where an imprecise sentence would be a false one.
