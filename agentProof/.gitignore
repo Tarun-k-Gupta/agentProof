@@ -29,3 +29,7 @@ subgraphs/*/build/
 # Next.js build output
 .next/
 next-env.d.ts
+
+# Foundry broadcast: keep run-latest.json as deployment provenance,
+# ignore the timestamped duplicates of the same run.
+contracts/broadcast/**/run-[0-9]*.json
