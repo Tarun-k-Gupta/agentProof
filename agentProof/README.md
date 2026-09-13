@@ -213,7 +213,7 @@ sequenceDiagram
             L1-->>Agent: BLOCK (denied by approver)
         end
     end
-    L1->>Acc: sign & submit UserOp (bundler → EntryPoint; strict 7579 accounts reject direct EOA calls)
+    L1->>Acc: sign and submit UserOp (bundler → EntryPoint, strict 7579 accounts reject direct EOA calls)
     Acc->>L2: preCheck — allowlist? snapshot balance → hookData
     alt target not allowlisted
         L2-->>Acc: revert (cheap, before state changes)
