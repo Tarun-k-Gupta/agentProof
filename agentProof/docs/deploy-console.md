@@ -14,12 +14,27 @@ Vercel explicitly; neither is inferred correctly by default.
 | Node.js Version | 22.x |
 
 The "include source files outside of the Root Directory" toggle is not
-optional. `apps/console/vercel.json` runs its install and build from the
-workspace root (`cd ../..`) because that is where `pnpm-lock.yaml`, the
-`packageManager` pin, and the `workspace:*` dependencies — `@agentproof/design`,
-`@agentproof/sdk`, `@agentproof/x402-client` — actually live. With the toggle
-off, Vercel uploads only `apps/console`, `cd ../..` lands outside the build
-context, and install fails before a single file is compiled.
+optional. The console depends on three `workspace:*` packages —
+`@agentproof/design`, `@agentproof/sdk`, `@agentproof/x402-client` — and on a
+`pnpm-lock.yaml` and a `packageManager` pin that both live at the workspace
+root, one level above the Root Directory. With the toggle off, Vercel uploads
+only `apps/console` and install fails before a single file is compiled.
+
+The Root Directory is **case-sensitive**: `agentProof/apps/console`, capital P.
+A lowercase `agentproof/...` fails immediately after the clone with "The
+specified Root Directory does not exist", before install runs.
+
+`vercel.json` deliberately sets nothing but the framework preset. An earlier
+version overrode `installCommand` and `buildCommand` to `cd ../..` into the
+workspace root; the build itself succeeded, but Vercel's packaging step then
+could not resolve `next` through pnpm's symlinked `node_modules` and failed
+with:
+
+    Cannot find module 'next/dist/compiled/next-server/server.runtime.prod.js'
+
+Vercel already knows how to find a pnpm workspace root from an app
+subdirectory. Doing it by hand put the install somewhere its own tracing step
+did not look for it. Leave install and build on auto-detect.
 
 ## Environment variables
 
