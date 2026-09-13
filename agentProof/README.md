@@ -20,7 +20,7 @@ The source of truth is `deployments/*.json`, read directly by the SDK, the API a
 |---|---|---|
 | Subgraph query endpoint | [`agentproof-agent-history` v0.0.2-live-hook](https://api.studio.thegraph.com/query/1760028/agentproof-agent-history/v0.0.2-live-hook) | Indexes the hook's own events from block 11684190 |
 | x402 facilitator | [api.testnet.blocky402.com](https://api.testnet.blocky402.com) | The API refuses to start unless `/supported` advertises `hedera-testnet` with `scheme=exact` |
-| Verification API (public) | `https://castle-activated-behavioral-operation.trycloudflare.com` | **Ephemeral.** A Cloudflare quick tunnel to a locally-run API — a fresh hostname on every restart. This is how the Bazantic gateway recipe reaches it; it is not stable infrastructure and is not presented as such. |
+| Verification API (public) | started on demand — `bash scripts/tunnel.sh` prints the hostname | **Ephemeral by design.** A Cloudflare quick tunnel to a locally-run API: a fresh hostname on every start, and none of them outlive the session. This is how the Bazantic gateway recipe reaches the API. Deliberately not pinned here — a hostname written into this table is a dead link within hours, and everything else in this section is permanent. |
 
 ### Ethereum Sepolia — chain 11155111
 
